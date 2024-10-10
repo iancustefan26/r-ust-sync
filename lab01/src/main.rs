@@ -55,7 +55,7 @@ fn main() {
         }
         number += 1;
     }
-    let mut beers: i32 = 99;
+    let mut beers: i32 = 99; //third
     while beers >= 1 {
         println!("{} bottles of beer on the wall\n{} bottles of beer\nTake one down, pass it around\n{} bottles of beer on the wall\n", beers, beers, beers - 1);
 
