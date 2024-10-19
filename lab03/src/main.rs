@@ -8,6 +8,14 @@ const MAX_U32: u32 = 4_294_967_295;
 enum Errors {
     OvertakingU32,
 }
+#[derive(Debug)]
+enum CharErrors {
+    NotASCII,
+    NotDigit,
+    NotBase16,
+    NotLetter,
+    NotPrintable,
+}
 
 //For problem 1
 
@@ -107,6 +115,102 @@ fn checked_multiply_u32_result(x: u32, y: u32) -> Result<u32, Errors> {
         Ok(result)
     } else {
         Err(Errors::OvertakingU32)
+    }
+}
+
+// For porblem 4
+
+use CharErrors::*;
+
+fn is_ascii(c: char) -> Result<bool, CharErrors> {
+    if c as u32 <= 0x7F {
+        Ok(true)
+    } else {
+        Err(NotASCII)
+    }
+}
+
+fn is_letter(c: char) -> Result<char, CharErrors> {
+    let casted_char: u32 = c as u32;
+    if (casted_char >= 0x41 && casted_char <= 0x5A) || (casted_char >= 0x61 && casted_char <= 0x7A)
+    {
+        Ok(c)
+    } else {
+        Err(NotLetter)
+    }
+}
+
+fn is_digit(c: char) -> Result<bool, CharErrors> {
+    if c as u32 >= 0x30 && c as u32 <= 0x39 {
+        Ok(true)
+    } else {
+        Err(NotDigit)
+    }
+}
+
+fn is_base16(c: char) -> Result<bool, CharErrors> {
+    if is_digit(c).is_ok() == true {
+        Ok(true)
+    } else if c as u32 >= 0x41 && c as u32 <= 0x46 {
+        Ok(true)
+    } else {
+        Err(NotBase16)
+    }
+}
+
+fn is_printable(c: char) -> Result<bool, CharErrors> {
+    let char_u32 = c as u32;
+    if char_u32 > 32 && char_u32 < 127 {
+        Ok(true)
+    } else {
+        Err(NotPrintable)
+    }
+}
+
+fn to_uppercase(c: char) -> Result<char, CharErrors> {
+    let upper_letter = is_letter(c)?.to_ascii_uppercase();
+
+    Ok(upper_letter)
+}
+
+fn to_lowercase(c: char) -> Result<char, CharErrors> {
+    let lower_letter = is_letter(c)?.to_ascii_lowercase();
+
+    Ok(lower_letter)
+}
+
+fn print_char(c: char) -> Result<(), CharErrors> {
+    if is_printable(c).is_ok() {
+        println!("char : {}", c);
+        Ok(())
+    } else {
+        Err(NotPrintable)
+    }
+}
+
+fn char_to_number(c: char) -> Result<u32, CharErrors> {
+    if is_ascii(c).is_ok() || is_digit(c).is_ok() {
+        Ok(c as u32)
+    } else {
+        Err(NotASCII)
+    }
+}
+
+fn char_to_number_hex(c: char) -> Result<u32, CharErrors> {
+    if is_ascii(c).is_ok() || is_base16(c).is_ok() {
+        Ok(c as u32)
+    } else {
+        Err(NotBase16)
+    }
+}
+
+fn print_error(error: CharErrors) -> () {
+    match error {
+        NotASCII => println!("Error : Char not a ASCII character"),
+        NotBase16 => println!("Error : Char not a Base16 digit"),
+        NotDigit => println!("Error : Char not a digit character"),
+        NotLetter => println!("Error : Char not a letter character"),
+        NotPrintable => println!("Error : Char not a printable character"),
     }
 }
 
@@ -271,6 +375,56 @@ fn main() {
             Errors::OvertakingU32 => {
                 println!("Checked multiply for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
             } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
+        }
+    }
+
+    // Problem 4 and 5
+
+    app(); //implements all the functions
+}
+
+// Problem 5
+// Simple app that iterates through all possible values of u8 and prints info about each one
+// (next prime number available on u16, and all the possible states from CharErrors)
+
+fn app() -> () {
+    let mut c: u8 = 255;
+    print!("\n\nSimple app:\n\n");
+    loop {
+        println!("Information about value(u32) : {} ", c);
+        println!(
+            "Next prime number for value {} is {}",
+            c,
+            next_prime(c as u16).expect("Failed to unwrap next prime number on u16")
+        );
+        match to_uppercase(c as char) {
+            Ok(value) => println!("Uppercase: {}", value),
+            Err(e) => print_error(e),
+        }
+        match to_lowercase(c as char) {
+            Ok(value) => println!("Lowercase: {}", value),
+            Err(e) => print_error(e),
+        }
+        match print_char(c as char) {
+            Ok(()) => print!(""),
+            Err(e) => print_error(e),
+        }
+        match char_to_number(c as char) {
+            Ok(v) => println!("Char to number: {}", v),
+            Err(e) => print_error(e),
+        }
+        match char_to_number_hex(c as char) {
+            Ok(v) => {
+                let hex_string = format!("{:X}", v);
+                println!("Char to number hex: 0x{}", hex_string);
+            }
+            Err(e) => print_error(e),
+        }
+        print!("\n");
+        if c == 0 {
+            return;
+        } else {
+            c -= 1;
         }
     }
 }
