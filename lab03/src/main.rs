@@ -4,6 +4,13 @@ use std::env;
 const MAX_U16: u16 = 65535;
 const MAX_U32: u32 = 4_294_967_295;
 
+#[derive(Debug)]
+enum Errors {
+    OvertakingU32,
+}
+
+//For problem 1
+
 fn is_prime(x: u16) -> bool {
     if x < 2 {
         return false;
@@ -42,6 +49,8 @@ fn next_prime(x: u16) -> Option<u16> {
 
     return Some(next);
 }
+
+// For problem 2
 
 fn check_dif(x: u32, y: u32) -> Option<u32> {
     let dif = MAX_U32 - x;
@@ -83,7 +92,27 @@ fn checked_multiply_u32(x: u32, y: u32) -> Option<u32> {
     }
 }
 
+// For problem 3
+
+fn checked_addition_u32_result(x: u32, y: u32) -> Result<u32, Errors> {
+    if let Some(result) = check_dif(x, y) {
+        Ok(result)
+    } else {
+        Err(Errors::OvertakingU32)
+    }
+}
+
+fn checked_multiply_u32_result(x: u32, y: u32) -> Result<u32, Errors> {
+    if let Some(result) = check_multiply(x, y) {
+        Ok(result)
+    } else {
+        Err(Errors::OvertakingU32)
+    }
+}
+
 fn main() {
+    // Main function with examples
+
     env::set_var("RUST_BACKTRACE", "full");
     //Problem 1
     let mut x = 6000;
@@ -111,7 +140,7 @@ fn main() {
             );
         }
         _ => {
-            println!("This piece of code should never be executed!");
+            panic!("This piece of code should never be executed!");
         }
     }
     /* This code panics if executed
@@ -138,7 +167,7 @@ fn main() {
             );
         }
         _ => {
-            println!("This piece of code should never be executed!");
+            panic!("This piece of code should never be executed!");
         }
     }
     /*  This code panics if executed
@@ -151,4 +180,97 @@ fn main() {
         _ => {println!("This piece of code should never be executed!");}
     }
     */
+
+    //Problem 3
+    //first
+
+    let x: u32 = 1000;
+    let y: u32 = 2000;
+    let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
+    if result.is_ok() {
+        println!(
+            "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
+            x,
+            y,
+            result.unwrap()
+        );
+    } else {
+        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
+        let error = result
+            .err()
+            .expect("Error when trying to unwrap error type (Errors enum)");
+        match error {
+            Errors::OvertakingU32 => {
+                println!("Checked addition for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
+            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
+        }
+    }
+
+    let x: u32 = MAX_U32 - 2;
+    let y: u32 = 3;
+    let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
+    if result.is_ok() {
+        println!(
+            "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
+            x,
+            y,
+            result.unwrap()
+        );
+    } else {
+        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
+        let error = result
+            .err()
+            .expect("Error when trying to unwrap error type (Errors enum)");
+        match error {
+            Errors::OvertakingU32 => {
+                println!("Checked addition for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
+            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
+        }
+    }
+
+    //second
+
+    let x: u32 = 1000;
+    let y: u32 = 2000;
+    let result: Result<u32, Errors> = checked_multiply_u32_result(x, y);
+    if result.is_ok() {
+        println!(
+            "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
+            x,
+            y,
+            result.unwrap()
+        );
+    } else {
+        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
+        let error = result
+            .err()
+            .expect("Error when trying to unwrap error type (Errors enum)");
+        match error {
+            Errors::OvertakingU32 => {
+                println!("Checked addition for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
+            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
+        }
+    }
+
+    let x: u32 = MAX_U32 / 2;
+    let y: u32 = 3;
+    let result: Result<u32, Errors> = checked_multiply_u32_result(x, y);
+    if result.is_ok() {
+        println!(
+            "Checked multiply for u32 type using Result method done for {} and {} : Result is {}",
+            x,
+            y,
+            result.unwrap()
+        );
+    } else {
+        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
+        let error = result
+            .err()
+            .expect("Error when trying to unwrap error type (Errors enum)");
+        match error {
+            Errors::OvertakingU32 => {
+                println!("Checked multiply for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
+            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
+        }
+    }
 }
