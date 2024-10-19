@@ -1,11 +1,13 @@
 use core::panic;
 use std::env;
+use thiserror::Error;
 
 const MAX_U16: u16 = 65535;
 const MAX_U32: u32 = 4_294_967_295;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 enum Errors {
+    #[error("Overtaking u32 value")]
     OvertakingU32,
 }
 #[derive(Debug)]
@@ -291,45 +293,27 @@ fn main() {
     let x: u32 = 1000;
     let y: u32 = 2000;
     let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
-    if result.is_ok() {
-        println!(
+    match result{
+        Ok(value) => println!(
             "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
             x,
             y,
-            result.unwrap()
-        );
-    } else {
-        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
-        let error = result
-            .err()
-            .expect("Error when trying to unwrap error type (Errors enum)");
-        match error {
-            Errors::OvertakingU32 => {
-                println!("Checked addition for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
-            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
-        }
+            value
+        ),
+        Err(e) => println!("Error : {}", e)
     }
 
     let x: u32 = MAX_U32 - 2;
     let y: u32 = 3;
     let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
-    if result.is_ok() {
-        println!(
+    match result{
+        Ok(value) => println!(
             "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
             x,
             y,
-            result.unwrap()
-        );
-    } else {
-        //print!(("Checked addition for u32 type using Result method propagated an error for values {} and {} : {}", x, y, result.))
-        let error = result
-            .err()
-            .expect("Error when trying to unwrap error type (Errors enum)");
-        match error {
-            Errors::OvertakingU32 => {
-                println!("Checked addition for u32 type using Result method propagated an error for values {} and {} : Overtaking MAX_U32", x, y)
-            } //_ => {panic!("This piece of code should never be executed, undefined behavior")}
-        }
+            value
+        ),
+        Err(e) => println!("Error : {}", e)
     }
 
     //second
