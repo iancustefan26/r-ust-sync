@@ -293,27 +293,23 @@ fn main() {
     let x: u32 = 1000;
     let y: u32 = 2000;
     let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
-    match result{
+    match result {
         Ok(value) => println!(
             "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
-            x,
-            y,
-            value
+            x, y, value
         ),
-        Err(e) => println!("Error : {}", e)
+        Err(e) => println!("Error : {}", e),
     }
 
     let x: u32 = MAX_U32 - 2;
     let y: u32 = 3;
     let result: Result<u32, Errors> = checked_addition_u32_result(x, y);
-    match result{
+    match result {
         Ok(value) => println!(
             "Checked addition for u32 type using Result method done for {} and {} : Result is {}",
-            x,
-            y,
-            value
+            x, y, value
         ),
-        Err(e) => println!("Error : {}", e)
+        Err(e) => println!("Error : {}", e),
     }
 
     //second
