@@ -236,10 +236,7 @@ fn main() {
     println!("Encrypting...");
     if let Some(cipher) = rot13_cipher_fast(&text) {
         println!("Time elapsed : {:?}", start.elapsed());
-        println!(
-            "Len of cipher : {:.4} GB",
-            cipher.len() as f64 / (1024 * 1024 * 1024) as f64
-        );
+        println!("Len of cipher: {} bytes", cipher.len());
         // Prelucrare cipher... eventual suprascrierea lui in fisier
     } else {
         println!("Error but time is : {:?}", start.elapsed());
