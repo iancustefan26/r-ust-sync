@@ -1,8 +1,14 @@
+use std::fs::File;
+use std::io::Write;
+use std::time::Instant;
 use std::{collections::HashMap, fs, io};
+
 const DUMMY_FILE: &str = "assets/dummy.txt";
 const ERROR_FILE: &str = "assets/fake.txt";
 const SENTENCES_FILE: &str = "assets/sentences.txt";
 const HOSTS_FILE: &str = "/etc/hosts";
+const SAMPLE_FILE: &str = "assets/sample_text.txt";
+const HUGE_FILE: &str = "assets/huge.txt";
 
 // Problema 1
 fn get_biggest_lines(text: &String) -> Result<(&str, &str), io::Error> {
@@ -92,6 +98,32 @@ fn print_hosts(file_path: &str) -> Result<(), io::Error> {
     Ok(())
 }
 
+// Bonus
+
+fn generate_huge_file(path: &str, gbs: u8) -> Result<(), io::Error> {
+    let check = fs::exists(path)?;
+    if check == true {
+        println!("Generated file already exists!");
+        return Ok(());
+    }
+    let mut file = File::create(path)?;
+
+    let size_in_bytes: u64 = gbs as u64 * 1024 * 1024 * 1024;
+    let sample_text = fs::read_to_string(SAMPLE_FILE)?;
+    let hosts_text = fs::read_to_string(HOSTS_FILE)?;
+    let dummy_text = fs::read_to_string(DUMMY_FILE)?;
+    let mut final_sample = String::new();
+    final_sample.push_str(&sample_text);
+    final_sample.push_str(&hosts_text);
+    final_sample.push_str(&dummy_text);
+    let n_of_paste = size_in_bytes / final_sample.len() as u64;
+    for _ in 0..n_of_paste {
+        file.write_all(final_sample.as_bytes())?;
+    }
+
+    Ok(())
+}
+
 fn main() {
     // Problema 1
     // Succes
@@ -166,5 +198,24 @@ fn main() {
         Err(e) => {
             println!("Could not print hosts: {e}")
         }
+    }
+
+    // Bonus
+    println!("\nBonus :");
+    match generate_huge_file(HUGE_FILE, 4) {
+        Ok(_) => {
+            println!("Generated huge file!")
+        }
+        Err(e) => {
+            println!("Error creating huge file : {e}");
+        }
+    }
+    let text = fs::read_to_string(HUGE_FILE).expect("Could not read from file");
+    let start = Instant::now();
+    if let Some(cipher) = rot13_cipher(&text) {
+        println!("{:?}", start.elapsed());
+        println!("Len of cipher : {}", cipher.len());
+    } else {
+        println!("Error but time is : {:?}", start.elapsed());
     }
 }
