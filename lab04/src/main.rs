@@ -1,6 +1,7 @@
-use std::{fs, io};
+use std::{collections::HashMap, fs, io};
 const DUMMY_FILE: &str = "assets/dummy.txt";
 const ERROR_FILE: &str = "assets/fake.txt";
+const SENTENCES_FILE: &str = "assets/sentences.txt";
 
 // Problema 1
 fn get_biggest_lines(text: &String) -> Result<(&str, &str), io::Error> {
@@ -51,6 +52,27 @@ fn rot13_cipher(input_text: &str) -> Option<String> {
     Some(cipher)
 }
 
+// Problema 3
+
+fn modify_sentence_abb(s: &str, abb: &HashMap<&str, &str>) -> Option<String> {
+    let mut mod_s = String::new();
+    let mut key_found = false;
+    for word in s.split_whitespace() {
+        if abb.contains_key(word) {
+            mod_s.push_str(abb.get(word).unwrap());
+            key_found = true;
+        } else {
+            mod_s.push_str(word);
+        }
+        mod_s.push(' ');
+    }
+    if key_found == false {
+        return None;
+    } // nu contine abrevieri (pt cazul de eroare)
+
+    Some(mod_s)
+}
+
 fn main() {
     // Problema 1
     // Succes
@@ -97,4 +119,24 @@ fn main() {
             text
         );
     }
+    // Problema 3
+    let abbreviations = HashMap::from([
+        ("dl", "domnul"),
+        ("pt", "pentru"),
+        ("dna", "doamna"),
+        ("dvs", "dumneavoastra"),
+    ]);
+    let mut sentences = fs::read_to_string(SENTENCES_FILE).expect("No such file for sentences");
+    println!("Initial sentences:\n{}\n", sentences);
+    let mut new_sentences = String::new();
+    for s in sentences.lines() {
+        if let Some(mod_s) = modify_sentence_abb(s, &abbreviations) {
+            new_sentences.push_str(&mod_s);
+        } else {
+            new_sentences.push_str("No abreviations found for this sentence!\n");
+        }
+        new_sentences.push('\n');
+    }
+    sentences = new_sentences;
+    println!("Modified sentences:\n{}", sentences);
 }
