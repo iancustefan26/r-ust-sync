@@ -1,7 +1,12 @@
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
-use std::{collections::HashMap, fs, io};
+use std::{
+    collections::HashMap,
+    fs::{self},
+    io,
+};
 
 const DUMMY_FILE: &str = "assets/dummy.txt";
 const ERROR_FILE: &str = "assets/fake.txt";
@@ -33,6 +38,7 @@ fn get_biggest_lines(text: &String) -> Result<(&str, &str), io::Error> {
 }
 
 // Problema 2
+
 fn rot13_cipher(input_text: &str) -> Option<String> {
     for byte in input_text.as_bytes() {
         if byte.is_ascii() == false {
@@ -110,18 +116,28 @@ fn generate_huge_file(path: &str, gbs: u8) -> Result<(), io::Error> {
 
     let size_in_bytes: u64 = gbs as u64 * 1024 * 1024 * 1024;
     let sample_text = fs::read_to_string(SAMPLE_FILE)?;
-    let hosts_text = fs::read_to_string(HOSTS_FILE)?;
-    let dummy_text = fs::read_to_string(DUMMY_FILE)?;
     let mut final_sample = String::new();
     final_sample.push_str(&sample_text);
-    final_sample.push_str(&hosts_text);
-    final_sample.push_str(&dummy_text);
-    let n_of_paste = size_in_bytes / final_sample.len() as u64;
-    for _ in 0..n_of_paste {
+    let n_of_paste: u64 = size_in_bytes / final_sample.len() as u64;
+    for _ in 1..n_of_paste {
         file.write_all(final_sample.as_bytes())?;
     }
 
     Ok(())
+}
+
+fn rot13_cipher_fast(input_text: &str) -> Option<String> {
+    // Construita dupa research pe internet
+    let cipher: String = input_text
+        .par_bytes() // Iterare paralela
+        .map(|byte| match byte {
+            b'a'..=b'z' => ((byte - b'a' + 13) % 26 + b'a') as char,
+            b'A'..=b'Z' => ((byte - b'A' + 13) % 26 + b'A') as char,
+            _ => byte as char,
+        })
+        .collect();
+
+    Some(cipher)
 }
 
 fn main() {
@@ -174,6 +190,7 @@ fn main() {
     let abbreviations = HashMap::from([
         ("dl", "domnul"),
         ("pt", "pentru"),
+        ("ptr", "pentru"),
         ("dna", "doamna"),
         ("dvs", "dumneavoastra"),
     ]);
@@ -210,11 +227,20 @@ fn main() {
             println!("Error creating huge file : {e}");
         }
     }
-    let text = fs::read_to_string(HUGE_FILE).expect("Could not read from file");
+    let text: String = fs::read_to_string(HUGE_FILE).expect("Could not read from file");
+    println!(
+        "Size of file: {:.4} GB",
+        text.len() as f64 / (1024 * 1024 * 1024) as f64
+    );
     let start = Instant::now();
-    if let Some(cipher) = rot13_cipher(&text) {
-        println!("{:?}", start.elapsed());
-        println!("Len of cipher : {}", cipher.len());
+    println!("Encrypting...");
+    if let Some(cipher) = rot13_cipher_fast(&text) {
+        println!("Time elapsed : {:?}", start.elapsed());
+        println!(
+            "Len of cipher : {:.4} GB",
+            cipher.len() as f64 / (1024 * 1024 * 1024) as f64
+        );
+        // Prelucrare cipher... eventual suprascrierea lui in fisier
     } else {
         println!("Error but time is : {:?}", start.elapsed());
     }
