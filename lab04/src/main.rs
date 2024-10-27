@@ -2,6 +2,7 @@ use std::{collections::HashMap, fs, io};
 const DUMMY_FILE: &str = "assets/dummy.txt";
 const ERROR_FILE: &str = "assets/fake.txt";
 const SENTENCES_FILE: &str = "assets/sentences.txt";
+const HOSTS_FILE: &str = "/etc/hosts";
 
 // Problema 1
 fn get_biggest_lines(text: &String) -> Result<(&str, &str), io::Error> {
@@ -73,6 +74,24 @@ fn modify_sentence_abb(s: &str, abb: &HashMap<&str, &str>) -> Option<String> {
     Some(mod_s)
 }
 
+// Problema 4
+fn print_hosts(file_path: &str) -> Result<(), io::Error> {
+    let text = fs::read_to_string(file_path)?;
+    for line in text.lines() {
+        if line.starts_with("#") {
+            continue;
+        } else {
+            if let Some((ip_addr, host_name)) = line.split_once(char::is_whitespace) {
+                println!("{} => {}", ip_addr, host_name.trim_ascii_start());
+            } else {
+                println!("Could not split spaces between host name and IP");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn main() {
     // Problema 1
     // Succes
@@ -139,4 +158,13 @@ fn main() {
     }
     sentences = new_sentences;
     println!("Modified sentences:\n{}", sentences);
+
+    // Problema 4
+    println!("Hosts:");
+    match print_hosts(HOSTS_FILE) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Could not print hosts: {e}")
+        }
+    }
 }
