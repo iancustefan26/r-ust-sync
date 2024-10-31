@@ -1,10 +1,13 @@
+use anyhow::Result;
+use serde_derive::Deserialize;
 use std::{fmt, fs};
 
-const STUDENTS_FILE: &str = "assets/students.txt";
+const STUDENTS_FILE_CSV: &str = "assets/students.csv";
+const STUDENTS_FILE_JSON: &str = "assets/students.jsonl";
 
 // Problema 1
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct Student {
     name: String,
     phone: String,
@@ -40,9 +43,9 @@ impl fmt::Display for Student {
     }
 }
 
-fn main() {
+fn main() -> Result<(), anyhow::Error> {
     // Problema 1
-    let students_text = fs::read_to_string(STUDENTS_FILE).expect("No such file for students");
+    let students_text = fs::read_to_string(STUDENTS_FILE_CSV)?;
     let mut oldest_student = Student::new();
     let mut youngest_student = Student::new();
     for student in students_text.lines() {
@@ -57,12 +60,15 @@ fn main() {
                     .expect("Couldn't fit age field into u8 (Invalid age)"),
             ),
         };
-        if oldest_student.age == None {
-            oldest_student = temp_student.clone();
-            youngest_student = temp_student;
-            continue;
+        match oldest_student.age {
+            None => {
+                oldest_student = temp_student.clone();
+                youngest_student = temp_student;
+                continue;
+            }
+            Some(_) => (),
         }
-        if temp_student.is_older_than(&oldest_student) == true {
+        if temp_student.is_older_than(&oldest_student) {
             oldest_student = temp_student;
         } else {
             youngest_student = temp_student;
@@ -74,4 +80,33 @@ fn main() {
     );
 
     // Problema 2 (p2_🎃.rs, pumpkin.png)
+
+    // Problema 3
+    let students_content = fs::read_to_string(STUDENTS_FILE_JSON)?;
+    let mut oldest_student = Student::new();
+    let mut youngest_student = Student::new();
+    for line in students_content.lines() {
+        if line.is_empty() {
+            break; // Potential empty whitespace lines
+        }
+        let student: Student = serde_json::from_str(line)?;
+        match oldest_student.age {
+            None => {
+                oldest_student = student.clone();
+                youngest_student = student;
+            }
+            Some(_) => {
+                if student.is_older_than(&oldest_student) {
+                    oldest_student = student;
+                } else {
+                    youngest_student = student;
+                }
+            }
+        }
+    }
+    println!(
+        "Youngest student (using jsons): {}\nOldest student (using jsons): {}",
+        youngest_student, oldest_student
+    );
+    Ok(())
 }
