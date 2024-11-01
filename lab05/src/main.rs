@@ -115,7 +115,8 @@ fn main() -> Result<(), anyhow::Error> {
         oldest_student
     );
 
-    // TODO: Bonus
+    // Bonus
+
     let matrix_content = fs::read_to_string(BLINKER_FILE)?;
     let mut matrix: Matrix = Vec::new();
     for line in matrix_content.lines() {
