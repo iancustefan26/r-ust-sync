@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 thiserror = "2.0.2"
 anyhow = "1.0"
+rusqlite = { version = "0.32.0", features = ["bundled"] }

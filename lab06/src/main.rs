@@ -2,8 +2,10 @@ use anyhow::Result;
 use errors::CommandErrors::{self, *};
 use std::{fs, time};
 mod errors;
+use rusqlite::Connection;
 
 const INPUT1: &str = "assets/input1.txt";
+const DATABASE: &str = "assets/database/bookmarks.db";
 
 fn split_by_newline_or_whitespace(string: &str) -> Option<(&str, &str)> {
     if let Some(sth) = string.trim_ascii().split_once(" ") {
@@ -26,6 +28,92 @@ struct ElapsedCommand {
     elapsed: time::Instant,
 }
 struct StopCommand {}
+
+struct BookmarkCommand {
+    connection: Connection,
+}
+
+struct Bookmark {
+    name: String,
+    link: String,
+}
+
+impl BookmarkCommand {
+    fn new() -> Result<Self> {
+        let instance = BookmarkCommand {
+            connection: Connection::open(DATABASE)?,
+        };
+        let create = r"
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            name text    NOT NULL,
+            link text    NOT NULL
+        )
+        ";
+        instance.connection.execute(create, ())?;
+
+        Ok(instance)
+    }
+    fn add(&mut self, name: &str, link: &str) -> Result<()> {
+        let added = self.connection.execute(
+            "INSERT INTO bookmarks (name, link) VALUES
+            (?1, ?2)",
+            (name, link),
+        )?;
+        println!("Added rows: {added}");
+        Ok(())
+    }
+    fn search(&self, name: &str) -> Result<()> {
+        let like_pattern = format!("%{}%", name);
+        let mut stmt = self
+            .connection
+            .prepare("SELECT DISTINCT * FROM bookmarks WHERE name LIKE ?1")?;
+        let bookmark_iter = stmt.query_map([&like_pattern], |row| {
+            Ok(Bookmark {
+                name: row.get("name")?,
+                link: row.get("link")?,
+            })
+        })?;
+        for i in bookmark_iter {
+            let i = i?;
+            println!("name={}, link={}", i.name, i.link);
+        }
+        Ok(())
+    }
+}
+
+impl Emulate for BookmarkCommand {
+    fn get_name(&self) -> &str {
+        "bk"
+    }
+    fn exec(&mut self, args: &str) -> Result<(), CommandErrors> {
+        let args: Vec<&str> = args.split_ascii_whitespace().collect();
+        let n_of_args = args.len();
+        // Aici un improvement ar fi sa folosesc un regex dar o voi face ulterior
+        if n_of_args == 2 && args[0] == "search" {
+            // search
+            println!("Args search: {} {}", args[0], args[1]);
+            match self.search(args[1]) {
+                Err(e) => {
+                    println!("Error (db): {}", e);
+                    return Err(Unexpected);
+                }
+                Ok(_) => return Ok(()),
+            }
+        } else if n_of_args == 3 && args[0] == "add" {
+            // add
+            println!("Args add: {} {} {}", args[0], args[1], args[2]);
+            match self.add(args[1], args[2]) {
+                Err(e) => {
+                    println!("Error (db): {}", e);
+                    return Err(Unexpected);
+                }
+                Ok(_) => return Ok(()),
+            }
+        } else {
+            return Err(BadArgs);
+        }
+    }
+}
 
 impl Emulate for PingCommand {
     fn get_name(&self) -> &str {
@@ -146,6 +234,7 @@ fn main() -> Result<()> {
         elapsed: time::Instant::now(),
     }));
     terminal.register(Box::new(StopCommand {}));
+    terminal.register(Box::new(BookmarkCommand::new()?));
     terminal.run()?;
 
     Ok(())

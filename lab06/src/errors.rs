@@ -8,6 +8,8 @@ pub enum CommandErrors {
     IncorrectSpell,
     #[error("Bad arguments")]
     BadArgs,
+    #[error("Unexpected database error")]
+    Unexpected,
     #[error("Stop")]
     Stop,
 }
