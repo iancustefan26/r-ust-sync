@@ -1,0 +1,18 @@
+ping
+ping abc
+
+count
+count a b c
+count a
+count a             b
+   count a             b   
+COUNT
+elapsed
+times
+times
+times abc
+
+elapsed abc
+ping
+ELApsED
+stop
