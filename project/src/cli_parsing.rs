@@ -1,9 +1,39 @@
 use anyhow::Result;
 use clap::{Arg, Command};
 use regex::Regex;
+use std::collections::HashSet;
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 
 use crate::errors::*;
 
+const CFG_FILE: &str = "cfg/locations.cfg";
+
+// Appending the given arguments to the config file
+fn append_to_cfg(locations: &Vec<String>) -> Result<()> {
+    let mut existing_locations = HashSet::new();
+    let file = fs::File::open(CFG_FILE)?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        existing_locations.insert(line?);
+    }
+
+    let mut cfg_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(CFG_FILE)?;
+
+    for location in locations {
+        if !existing_locations.contains(location) {
+            writeln!(cfg_file, "{}", location)?;
+        }
+    }
+    Ok(())
+}
+
+// Parsing the given arguments
 pub fn parse_args() -> Result<Option<Vec<String>>> {
     let matches = Command::new("advanced_rsync")
         .version("1.0")
@@ -14,7 +44,7 @@ pub fn parse_args() -> Result<Option<Vec<String>>> {
                 .short('s')
                 .long("set")
                 .value_name("LOCATIONS")
-                .help("Source and destination locations in the format <LOCATION_TYPE>:<Path_in_location>")
+                .help("Source and destination locations that will be added to the cfg file in the format <LOCATION_TYPE>:<Path_in_location>")
                 .required(false)
                 .num_args(1..=100),
         )
@@ -32,6 +62,7 @@ pub fn parse_args() -> Result<Option<Vec<String>>> {
                     return Err(ArgErrors::InvalidLocation(loc.clone()).into());
                 }
             }
+            append_to_cfg(&locations)?;
             Ok(Some(locations))
         }
         None => {
@@ -39,4 +70,22 @@ pub fn parse_args() -> Result<Option<Vec<String>>> {
             Ok(None)
         }
     }
+}
+
+// Reading from the CFG file for running
+pub fn retrieve_locations() -> Result<Vec<String>> {
+    if !Path::new(CFG_FILE).exists() {
+        File::create(CFG_FILE)?;
+    }
+    let content = fs::read_to_string(CFG_FILE)?;
+    if content.is_empty() {
+        return Err(ArgErrors::EmptyCfg.into());
+    }
+    let mut locations = Vec::new();
+
+    for line in content.lines() {
+        locations.push(line.to_string());
+    }
+
+    Ok(locations)
 }
