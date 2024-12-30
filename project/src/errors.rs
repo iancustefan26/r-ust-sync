@@ -8,3 +8,9 @@ pub enum ArgErrors {
     #[error("Config file empty, use --help to give --set arg some location paths")]
     EmptyCfg,
 }
+
+#[derive(Debug, Error)]
+pub enum FileErrors {
+    #[error("Invalid file for listing: {0}")]
+    InvalidFileForListing(String),
+}

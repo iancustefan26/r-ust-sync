@@ -3,17 +3,20 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
 
+use crate::errors::*;
 use crate::utils::*;
 
+#[derive(Eq, PartialEq, Hash)]
 pub enum LocTypes {
     Ftp(String),    // ftp:user:password@URL/path
     Zip(String),    // zip:/path/to/archive.zip
     Folder(String), // folder:/path/to/folder
+    SimpleFile(String),
 }
 
 pub trait ReadOnly {
-    fn list_files(&self) -> Result<HashMap<String, (SystemTime, String)>>; // Returns file paths with last modified times
-    fn read_file(&self, path: &str) -> Option<Vec<u8>>; // Read files as bytes
+    fn list_files(&self) -> Result<HashMap<LocTypes, (SystemTime, String)>>; // Returns file paths with last modified times
+    fn read_file(&self) -> Option<Vec<u8>>; // Read files as bytes
 }
 
 pub trait ReadWrite: ReadOnly {
@@ -22,34 +25,30 @@ pub trait ReadWrite: ReadOnly {
 }
 
 impl ReadOnly for LocTypes {
-    fn list_files(&self) -> Result<HashMap<String, (SystemTime, String)>> {
+    fn list_files(&self) -> Result<HashMap<LocTypes, (SystemTime, String)>> {
         match self {
             LocTypes::Ftp(url) => {
                 // FTP logic
                 Ok(HashMap::new())
             }
-            LocTypes::Zip(path) => {
-                // ZIP logic
-                Ok(HashMap::new())
-            }
+            LocTypes::Zip(path) => Ok(list_files_in_zip(path)?),
             LocTypes::Folder(path) => Ok(list_files_recursive(path)?),
+            LocTypes::SimpleFile(_) => Err(FileErrors::InvalidFileForListing(
+                "a simple file could not be iterated".to_string(),
+            )
+            .into()),
         }
     }
 
-    fn read_file(&self, path: &str) -> Option<Vec<u8>> {
+    fn read_file(&self) -> Option<Vec<u8>> {
         match self {
             LocTypes::Ftp(url) => {
                 // FTP logic
                 None
             }
-            LocTypes::Zip(path) => {
-                // ZIP logic
-                None
-            }
-            LocTypes::Folder(path) => {
-                // Folder logic
-                None
-            }
+            LocTypes::Zip(path) => file_as_bytes(path),
+            LocTypes::Folder(_) => None,
+            LocTypes::SimpleFile(path) => file_as_bytes(path),
         }
     }
 }
@@ -63,6 +62,7 @@ impl ReadWrite for LocTypes {
                 // Do nothing because ZIP is read only
                 panic!("Cannot write to a ZIP archive.");
             }
+            LocTypes::SimpleFile(path) => {}
         }
     }
 
@@ -73,6 +73,7 @@ impl ReadWrite for LocTypes {
             LocTypes::Zip(_) => {
                 panic!("Cannot delete from a ZIP archive.");
             }
+            LocTypes::SimpleFile(path) => {}
         }
     }
 }
@@ -106,6 +107,7 @@ impl fmt::Display for LocTypes {
             LocTypes::Ftp(details) => write!(f, "FTP Location: {}", details),
             LocTypes::Zip(path) => write!(f, "ZIP Archive: {}", path),
             LocTypes::Folder(path) => write!(f, "Folder Path: {}", path),
+            LocTypes::SimpleFile(path) => write!(f, "File Path: {}", path),
         }
     }
 }
