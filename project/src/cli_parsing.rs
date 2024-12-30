@@ -91,15 +91,16 @@ pub fn retrieve_locations() -> Result<Vec<LocTypes>> {
                 index, line
             );
         } else {
-            match line.split_once(":").unwrap().0 {
+            let type_path = line.split_once(":").unwrap();
+            match type_path.0 {
                 "ftp" => {
-                    locations.push(LocTypes::Ftp(line.to_string()));
+                    locations.push(LocTypes::Ftp(type_path.1.to_string()));
                 }
                 "folder" => {
-                    locations.push(LocTypes::Folder(line.to_string()));
+                    locations.push(LocTypes::Folder(type_path.1.to_string()));
                 }
                 "zip" => {
-                    locations.push(LocTypes::Zip(line.to_string()));
+                    locations.push(LocTypes::Zip(type_path.1.to_string()));
                 }
                 _ => {
                     println!("Line {}: file type unrecognized: {}", index, line);

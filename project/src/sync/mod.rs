@@ -1,6 +1,9 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
+
+use crate::utils::*;
 
 pub enum LocTypes {
     Ftp(String),    // ftp:user:password@URL/path
@@ -9,7 +12,7 @@ pub enum LocTypes {
 }
 
 pub trait ReadOnly {
-    fn list_files(&self) -> HashMap<String, SystemTime>; // Returns file paths with last modified times
+    fn list_files(&self) -> Result<HashMap<String, (SystemTime, String)>>; // Returns file paths with last modified times
     fn read_file(&self, path: &str) -> Option<Vec<u8>>; // Read files as bytes
 }
 
@@ -19,20 +22,17 @@ pub trait ReadWrite: ReadOnly {
 }
 
 impl ReadOnly for LocTypes {
-    fn list_files(&self) -> HashMap<String, SystemTime> {
+    fn list_files(&self) -> Result<HashMap<String, (SystemTime, String)>> {
         match self {
             LocTypes::Ftp(url) => {
                 // FTP logic
-                HashMap::new()
+                Ok(HashMap::new())
             }
             LocTypes::Zip(path) => {
                 // ZIP logic
-                HashMap::new()
+                Ok(HashMap::new())
             }
-            LocTypes::Folder(path) => {
-                // Folder logic
-                HashMap::new()
-            }
+            LocTypes::Folder(path) => Ok(list_files_recursive(path)?),
         }
     }
 
