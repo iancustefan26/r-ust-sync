@@ -2,6 +2,7 @@ use anyhow::Result;
 
 mod cli_parsing;
 mod errors;
+mod sync;
 
 fn main() -> Result<()> {
     cli_parsing::parse_args()?;

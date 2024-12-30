@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
-use crate::errors::*;
+use crate::{errors::*, sync::*};
 
 const CFG_FILE: &str = "cfg/locations.cfg";
 
@@ -73,7 +73,7 @@ pub fn parse_args() -> Result<Option<Vec<String>>> {
 }
 
 // Reading from the CFG file for running
-pub fn retrieve_locations() -> Result<Vec<String>> {
+pub fn retrieve_locations() -> Result<Vec<LocTypes>> {
     if !Path::new(CFG_FILE).exists() {
         File::create(CFG_FILE)?;
     }
@@ -82,9 +82,30 @@ pub fn retrieve_locations() -> Result<Vec<String>> {
         return Err(ArgErrors::EmptyCfg.into());
     }
     let mut locations = Vec::new();
+    let location_regex = Regex::new(r"^(ftp|zip|folder):.+$")?;
 
-    for line in content.lines() {
-        locations.push(line.to_string());
+    for (index, line) in content.lines().enumerate() {
+        if !location_regex.is_match(line) {
+            println!(
+                "Line {}: Could not parse location and will not be taken into consideration : {}",
+                index, line
+            );
+        } else {
+            match line.split_once(":").unwrap().0 {
+                "ftp" => {
+                    locations.push(LocTypes::Ftp(line.to_string()));
+                }
+                "folder" => {
+                    locations.push(LocTypes::Folder(line.to_string()));
+                }
+                "zip" => {
+                    locations.push(LocTypes::Zip(line.to_string()));
+                }
+                _ => {
+                    println!("Line {}: file type unrecognized: {}", index, line);
+                }
+            }
+        }
     }
 
     Ok(locations)
