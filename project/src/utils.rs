@@ -3,6 +3,7 @@ use chrono::{DateTime, Local};
 use fs::File;
 use std::collections::HashMap;
 use std::io::Read;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, time};
 use walkdir::WalkDir;
@@ -62,10 +63,7 @@ pub fn list_files_in_zip(zip_path: &str) -> Result<HashMap<LocTypes, (SystemTime
             "Path : {}\nLast modified time : {:?} -- {}",
             file_path, system_time, human_readable_time
         );
-        files.insert(
-            LocTypes::SimpleFile(file_path),
-            (system_time, human_readable_time),
-        );
+        files.insert(LocTypes::Zip(file_path), (system_time, human_readable_time));
     }
     Ok(files)
 }
@@ -75,14 +73,16 @@ pub fn list_files_recursive(dir: &str) -> Result<HashMap<LocTypes, (SystemTime, 
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         let entry_path = entry.path().to_str().unwrap().to_string();
-        if !entry.file_type().is_dir() {
-            let last_modified_tuple = get_last_modified_time(&entry_path)?;
-            println!(
-                "Path : {}\nLast modified time : {:?} -- {}",
-                entry.path().display(),
-                last_modified_tuple.0,
-                last_modified_tuple.1
-            );
+        let last_modified_tuple = get_last_modified_time(&entry_path)?;
+        println!(
+            "Path : {}\nLast modified time : {:?} -- {}",
+            entry.path().display(),
+            last_modified_tuple.0,
+            last_modified_tuple.1
+        );
+        if entry.path().is_dir() {
+            files.insert(LocTypes::Folder(entry_path), last_modified_tuple);
+        } else {
             files.insert(LocTypes::SimpleFile(entry_path), last_modified_tuple);
         }
     }
@@ -107,4 +107,22 @@ pub fn file_as_bytes(file_path: &str) -> Option<Vec<u8>> {
     file.read_to_end(&mut buffer).ok()?;
 
     Some(buffer)
+}
+
+pub fn paste_to_file(path: &str, content: &[u8]) -> Result<()> {
+    Ok(fs::write(path, content)?)
+}
+
+pub fn delete(path: &str) -> Result<()> {
+    let path = Path::new(path);
+
+    if path.is_dir() {
+        fs::remove_dir_all(path)?;
+    } else if path.is_file() {
+        fs::remove_file(path)?;
+    } else {
+        return Err(anyhow::anyhow!("No such file or directory"));
+    }
+
+    Ok(())
 }

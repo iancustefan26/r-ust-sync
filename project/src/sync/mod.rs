@@ -20,8 +20,8 @@ pub trait ReadOnly {
 }
 
 pub trait ReadWrite: ReadOnly {
-    fn write_file(&self, path: &str, content: &[u8]);
-    fn delete_file(&self, path: &str);
+    fn write_file(&self, content: &[u8]) -> Result<()>;
+    fn delete_file(&self) -> Result<()>;
 }
 
 impl ReadOnly for LocTypes {
@@ -54,26 +54,28 @@ impl ReadOnly for LocTypes {
 }
 
 impl ReadWrite for LocTypes {
-    fn write_file(&self, path: &str, content: &[u8]) {
+    fn write_file(&self, content: &[u8]) -> Result<()> {
         match self {
-            LocTypes::Ftp(url) => {}
-            LocTypes::Folder(path) => {}
+            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Folder(_) => Err(FileErrors::InvalidFileForWriting(
+                "A folder can't be written".to_string(),
+            )
+            .into()),
             LocTypes::Zip(_) => {
-                // Do nothing because ZIP is read only
-                panic!("Cannot write to a ZIP archive.");
+                Err(FileErrors::InvalidFileForWriting("ZIP file is read-only".to_string()).into())
             }
-            LocTypes::SimpleFile(path) => {}
+            LocTypes::SimpleFile(path) => Ok(paste_to_file(path, content)?),
         }
     }
 
-    fn delete_file(&self, path: &str) {
+    fn delete_file(&self) -> Result<()> {
         match self {
-            LocTypes::Ftp(url) => {}
-            LocTypes::Folder(path) => {}
+            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Folder(path) => Ok(delete(path)?),
             LocTypes::Zip(_) => {
-                panic!("Cannot delete from a ZIP archive.");
+                Err(FileErrors::InvalidFileForDelete("ZIP file is read-only".to_string()).into())
             }
-            LocTypes::SimpleFile(path) => {}
+            LocTypes::SimpleFile(path) => Ok(delete(path)?),
         }
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use sync::{LocTypes, ReadOnly};
+use sync::{ReadOnly, ReadWrite};
 
 pub mod cli_parsing;
 pub mod errors;
@@ -15,14 +15,14 @@ fn main() -> Result<()> {
         match files {
             Ok(files) => {
                 for file in files {
-                    let file_bytes = file.0.read_file();
-                    match file_bytes {
-                        Some(bytes) => {
-                            println!("Content of file {} : {:?}", file.0, bytes);
-                        }
-                        None => {
-                            print!("")
-                        }
+                    let bytes: Vec<u8> = vec![10, 20, 30, 32, 31, 3, 3, 123, 21, 32, 3, 12];
+                    if file.0.to_string().contains("sync/") {
+                        println!("File path to delete: {}", file.0);
+                        //file.0.delete_file()?;
+                        file.0.write_file(&bytes)?;
+                    }
+                    if file.0.to_string().contains("utils.rs") {
+                        println!("File path to copy: {}", file.0);
                     }
                 }
             }
