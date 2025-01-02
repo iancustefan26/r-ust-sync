@@ -11,7 +11,9 @@ use zip::ZipArchive;
 
 pub use crate::sync::*;
 
-pub fn list_files_in_zip(zip_path: &str) -> Result<HashMap<LocTypes, (SystemTime, String)>> {
+pub fn list_files_in_zip(
+    zip_path: &str,
+) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
     let file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
@@ -59,31 +61,56 @@ pub fn list_files_in_zip(zip_path: &str) -> Result<HashMap<LocTypes, (SystemTime
             }
             None => (UNIX_EPOCH, "Unknown".to_string()),
         };
+        let rel_path = relative_path(zip_path, &file_path).unwrap();
+        /*
         println!(
-            "Path : {}\nLast modified time : {:?} -- {}",
-            file_path, system_time, human_readable_time
+            "Absolute Path : {}\nRelative Path : {}\nLast modified time : {:?} -- {}",
+            file_path, rel_path, system_time, human_readable_time
         );
-        files.insert(LocTypes::Zip(file_path), (system_time, human_readable_time));
+        */
+        files.insert(
+            rel_path,
+            (LocTypes::Zip(file_path), system_time, human_readable_time),
+        );
     }
     Ok(files)
 }
 
-pub fn list_files_recursive(dir: &str) -> Result<HashMap<LocTypes, (SystemTime, String)>> {
+// Result <Hashmap<(abosulute_path, relative_path) (unix_epoch modif time, human read. modif time)
+pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         let entry_path = entry.path().to_str().unwrap().to_string();
         let last_modified_tuple = get_last_modified_time(&entry_path)?;
+        let rel_path = relative_path(dir, &entry_path).unwrap();
+        /*
         println!(
-            "Path : {}\nLast modified time : {:?} -- {}",
+            "Absoulte Path : {}\nRelative Path: {}\nLast modified time : {:?} -- {}",
             entry.path().display(),
+            rel_path,
             last_modified_tuple.0,
             last_modified_tuple.1
         );
+        */
         if entry.path().is_dir() {
-            files.insert(LocTypes::Folder(entry_path), last_modified_tuple);
+            files.insert(
+                rel_path,
+                (
+                    LocTypes::Folder(entry_path),
+                    last_modified_tuple.0,
+                    last_modified_tuple.1,
+                ),
+            );
         } else {
-            files.insert(LocTypes::SimpleFile(entry_path), last_modified_tuple);
+            files.insert(
+                rel_path,
+                (
+                    LocTypes::SimpleFile(entry_path),
+                    last_modified_tuple.0,
+                    last_modified_tuple.1,
+                ),
+            );
         }
     }
     Ok(files)
@@ -125,4 +152,25 @@ pub fn delete(path: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn relative_path(base: &str, target: &str) -> Option<String> {
+    let base_path = Path::new(base);
+    let target_path = Path::new(target);
+
+    let rel = target_path
+        .strip_prefix(base_path)
+        .map(|rel_path| rel_path.to_string_lossy().to_string())
+        .ok();
+
+    match rel {
+        Some(rel) => {
+            if rel.is_empty() {
+                Some(".".to_string())
+            } else {
+                Some(rel)
+            }
+        }
+        None => None,
+    }
 }
