@@ -11,5 +11,6 @@ fn main() -> Result<()> {
     let locations = cli_parsing::retrieve_locations()?;
     let adv_rsync = Synchronizer::new(locations);
     adv_rsync.sync()?;
+    // Fara comentariu
     Ok(())
 }

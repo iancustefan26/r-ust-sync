@@ -128,11 +128,21 @@ fn get_last_modified_time(file_path: &str) -> Result<(SystemTime, String)> {
 }
 
 pub fn file_as_bytes(file_path: &str) -> Option<Vec<u8>> {
+    if let Some(zip_pos) = file_path.find(".zip") {
+        let (zip_path, inner_path) = file_path.split_at(zip_pos + 4); // +4 for ".zip"
+        let inner_path = inner_path.trim_start_matches('/');
+        let zip_file = File::open(zip_path).ok()?;
+        let mut zip_archive = ZipArchive::new(zip_file).ok()?;
+        let mut zip_file = zip_archive.by_name(inner_path).ok()?;
+        let mut buffer = Vec::new();
+        zip_file.read_to_end(&mut buffer).ok()?;
+
+        return Some(buffer);
+    }
+
     let mut file = File::open(file_path).ok()?;
     let mut buffer = Vec::new();
-
     file.read_to_end(&mut buffer).ok()?;
-
     Some(buffer)
 }
 

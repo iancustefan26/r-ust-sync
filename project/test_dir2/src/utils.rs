@@ -11,7 +11,9 @@ use zip::ZipArchive;
 
 pub use crate::sync::*;
 
-pub fn list_files_in_zip(zip_path: &str) -> Result<HashMap<LocTypes, (SystemTime, String)>> {
+pub fn list_files_in_zip(
+    zip_path: &str,
+) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
     let file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
@@ -59,32 +61,61 @@ pub fn list_files_in_zip(zip_path: &str) -> Result<HashMap<LocTypes, (SystemTime
             }
             None => (UNIX_EPOCH, "Unknown".to_string()),
         };
+        let rel_path = relative_path(zip_path, &file_path).unwrap();
+        /*
         println!(
-            "Path : {}\nLast modified time : {:?} -- {}",
-            file_path, system_time, human_readable_time
+            "Absolute Path : {}\nRelative Path : {}\nLast modified time : {:?} -- {}",
+            file_path, rel_path, system_time, human_readable_time
         );
-        files.insert(LocTypes::Zip(file_path), (system_time, human_readable_time));
+        */
+        files.insert(
+            rel_path,
+            (LocTypes::Zip(file_path), system_time, human_readable_time),
+        );
     }
     Ok(files)
 }
 
-pub fn list_files_recursive(dir: &str) -> Result<HashMap<LocTypes, (SystemTime, String)>> {
+// Result <Hashmap<(abosulute_path, relative_path) (unix_epoch modif time, human read. modif time)
+pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         let entry_path = entry.path().to_str().unwrap().to_string();
         let last_modified_tuple = get_last_modified_time(&entry_path)?;
+        let rel_path = relative_path(dir, &entry_path).unwrap();
+        /*
         println!(
-            "Path : {}\nLast modified time : {:?} -- {}",
+            "Absoulte Path : {}\nRelative Path: {}\nLast modified time : {:?} -- {}",
             entry.path().display(),
+            rel_path,
             last_modified_tuple.0,
             last_modified_tuple.1
         );
-        files.insert(LocTypes::SimpleFile(entry_path), last_modified_tuple);
+        */
+        if entry.path().is_dir() {
+            files.insert(
+                rel_path,
+                (
+                    LocTypes::Folder(entry_path),
+                    last_modified_tuple.0,
+                    last_modified_tuple.1,
+                ),
+            );
+        } else {
+            files.insert(
+                rel_path,
+                (
+                    LocTypes::SimpleFile(entry_path),
+                    last_modified_tuple.0,
+                    last_modified_tuple.1,
+                ),
+            );
+        }
     }
     Ok(files)
 }
-//
+
 // (unix epoch - human readable time)
 fn get_last_modified_time(file_path: &str) -> Result<(SystemTime, String)> {
     let metadata = fs::metadata(file_path)?;
@@ -97,11 +128,21 @@ fn get_last_modified_time(file_path: &str) -> Result<(SystemTime, String)> {
 }
 
 pub fn file_as_bytes(file_path: &str) -> Option<Vec<u8>> {
+    if let Some(zip_pos) = file_path.find(".zip") {
+        let (zip_path, inner_path) = file_path.split_at(zip_pos + 4); // +4 for ".zip"
+        let inner_path = inner_path.trim_start_matches('/');
+        let zip_file = File::open(zip_path).ok()?;
+        let mut zip_archive = ZipArchive::new(zip_file).ok()?;
+        let mut zip_file = zip_archive.by_name(inner_path).ok()?;
+        let mut buffer = Vec::new();
+        zip_file.read_to_end(&mut buffer).ok()?;
+
+        return Some(buffer);
+    }
+
     let mut file = File::open(file_path).ok()?;
     let mut buffer = Vec::new();
-
     file.read_to_end(&mut buffer).ok()?;
-
     Some(buffer)
 }
 
@@ -121,4 +162,25 @@ pub fn delete(path: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn relative_path(base: &str, target: &str) -> Option<String> {
+    let base_path = Path::new(base);
+    let target_path = Path::new(target);
+
+    let rel = target_path
+        .strip_prefix(base_path)
+        .map(|rel_path| rel_path.to_string_lossy().to_string())
+        .ok();
+
+    match rel {
+        Some(rel) => {
+            if rel.is_empty() {
+                Some(".".to_string())
+            } else {
+                Some(rel)
+            }
+        }
+        None => None,
+    }
 }

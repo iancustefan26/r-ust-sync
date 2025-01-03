@@ -81,6 +81,64 @@ impl ReadWrite for LocTypes {
     }
 }
 
+fn duplicate_newer_file(
+    file_1: (String, (LocTypes, SystemTime, String)),
+    file_2: (String, (LocTypes, SystemTime, String)),
+) -> Result<()> {
+    let (newer_file, older_file) = {
+        if file_1.1 .1 > file_2.1 .1 {
+            println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
+            (file_1, file_2)
+        } else if file_1.1 .1 < file_2.1 .1 {
+            println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
+            (file_2, file_1)
+        } else {
+            return Ok(()); // Same file
+        }
+    };
+    let bytes = newer_file.1 .0.read_file();
+    let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
+    match bytes {
+        Some(bytes) => {
+            older_file.1 .0.write_file(&bytes)?;
+        }
+        None => {
+            return Err(FileErrors::InvalidFileForReading("Couldn't read file".to_string()).into());
+        }
+    };
+    filetime::set_file_times(
+        older_file.1 .0.to_string(),
+        last_modif_time,
+        last_modif_time,
+    )?;
+
+    Ok(())
+}
+
+fn duplicate_newer_file_from_zip(
+    newer_file: (String, (LocTypes, SystemTime, String)),
+    older_file: (String, (LocTypes, SystemTime, String)),
+) -> Result<()> {
+    let bytes = newer_file.1 .0.read_file();
+    let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
+    match bytes {
+        Some(bytes) => {
+            older_file.1 .0.write_file(&bytes)?;
+            println!("Found a match: {} {}", newer_file.1 .0, older_file.1 .0);
+        }
+        None => {
+            return Err(FileErrors::InvalidFileForReading("Couldn't read file".to_string()).into());
+        }
+    };
+    filetime::set_file_times(
+        older_file.1 .0.to_string(),
+        last_modif_time,
+        last_modif_time,
+    )?;
+
+    Ok(())
+}
+
 // Sync logic
 pub struct Synchronizer {
     locations: Vec<LocTypes>,
@@ -110,39 +168,57 @@ impl Synchronizer {
                 let files2 = loc2.list_files()?;
                 for file_1 in files1 {
                     if files2.contains_key(&file_1.0) {
-                        if let LocTypes::SimpleFile(_) = file_1.1 .0 {
-                            // O(1) (hashmap)
-                            // If both locations contain a file, the newer version is copied
-                            let file_2 = files2.get_key_value(&file_1.0).unwrap();
-                            let (newer_file, older_file) = {
+                        // O(1) (hashmap)
+                        // If both locations contain a file, the newer version is copied
+                        let file_2 = files2.get_key_value(&file_1.0).unwrap();
+                        match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
+                            (LocTypes::Ftp(_), LocTypes::Ftp(_)) => {}
+                            (LocTypes::Ftp(_), LocTypes::Zip(_)) => {}
+                            (LocTypes::Ftp(_), LocTypes::SimpleFile(_)) => {}
+                            (LocTypes::Ftp(_), LocTypes::Folder(_)) => {}
+                            (LocTypes::Zip(path), LocTypes::Folder(_)) => {
+                                println!("ZIP-Folder");
+                            }
+                            (LocTypes::Zip(path), LocTypes::Ftp(_)) => {
+                                println!("ZIP-FTP");
+                            }
+                            (LocTypes::Zip(path), LocTypes::SimpleFile(_)) => {
+                                println!("ZIP: {path} - FILE");
                                 if file_1.1 .1 > file_2.1 .1 {
-                                    println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-                                    (file_1, (file_2.0.clone(), file_2.1.clone()))
-                                } else if file_1.1 .1 < file_2.1 .1 {
-                                    println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-                                    ((file_2.0.clone(), file_2.1.clone()), file_1)
-                                } else {
-                                    continue; // Same file
+                                    duplicate_newer_file_from_zip(
+                                        file_1,
+                                        (file_2.0.clone(), file_2.1.clone()),
+                                    )?;
                                 }
-                            };
-                            let bytes = newer_file.1 .0.read_file();
-                            let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
-                            match bytes {
-                                Some(bytes) => {
-                                    older_file.1 .0.write_file(&bytes)?;
-                                }
-                                None => {
-                                    return Err(FileErrors::InvalidFileForReading(
-                                        "Couldn't read file".to_string(),
-                                    )
-                                    .into());
-                                }
-                            };
-                            filetime::set_file_times(
-                                older_file.1 .0.to_string(),
-                                last_modif_time,
-                                last_modif_time,
-                            )?;
+                            }
+                            (LocTypes::Zip(path), LocTypes::Zip(_)) => {
+                                println!("ZIP-ZIP");
+                            }
+                            (LocTypes::SimpleFile(_), LocTypes::Folder(_)) => {
+                                println!("FILE-FOLDER");
+                            }
+                            (LocTypes::SimpleFile(_), LocTypes::SimpleFile(_)) => {
+                                println!("FILE-FILE");
+                                duplicate_newer_file(file_1, (file_2.0.clone(), file_2.1.clone()))?;
+                            }
+                            (LocTypes::SimpleFile(_), LocTypes::Ftp(_)) => {
+                                println!("FILE-FTP");
+                            }
+                            (LocTypes::SimpleFile(_), LocTypes::Zip(_)) => {
+                                println!("FILE-ZIP SKIP");
+                            }
+                            (LocTypes::Folder(path), LocTypes::Folder(_)) => {
+                                println!("FOLDER-FOLDER SKIP");
+                            }
+                            (LocTypes::Folder(path), LocTypes::Zip(_)) => {
+                                println!("FOLDER-FOLDER");
+                            }
+                            (LocTypes::Folder(path), LocTypes::Ftp(_)) => {
+                                println!("FOLDER-FOLDER");
+                            }
+                            (LocTypes::Folder(path), LocTypes::SimpleFile(_)) => {
+                                println!("FOLDER-FOLDER");
+                            }
                         }
                     } else {
                         // If only a location contains a file, the file is duplicated to the other location
