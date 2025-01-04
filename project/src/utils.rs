@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use fs::File;
+use fs::{create_dir_all, metadata, File};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
@@ -76,7 +76,7 @@ pub fn list_files_in_zip(
     Ok(files)
 }
 
-// Result <Hashmap<(abosulute_path, relative_path) (unix_epoch modif time, human read. modif time)
+// Result <Hashmap<relative_path, (absolute_path, unix_epoch modif time, human read. modif time)
 pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
     for entry in WalkDir::new(dir) {
@@ -161,6 +161,31 @@ pub fn delete(path: &str) -> Result<()> {
         return Err(anyhow::anyhow!("No such file or directory"));
     }
 
+    Ok(())
+}
+
+pub fn create(path: &str) -> Result<()> {
+    let path = Path::new(path);
+
+    if let Ok(meta) = metadata(path) {
+        if meta.is_file() {
+            // If the path already exists and is a file
+            println!("File exists: {:?}", path);
+            return Ok(());
+        } else if meta.is_dir() {
+            // If the path already exists and is a directory
+            println!("Path exists as a directory: {:?}", path);
+            return Ok(());
+        }
+    }
+
+    // If the path doesn't exist or isn't a file, create it
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+
+    File::create(path)?;
+    println!("Created: {:?}", path);
     Ok(())
 }
 

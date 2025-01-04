@@ -1,8 +1,13 @@
 use anyhow::Result;
 use filetime::FileTime;
+use notify::event::{ModifyKind, RenameMode};
+use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
-use std::time::SystemTime;
+use std::path::Path;
+use std::sync::mpsc;
+use std::time::{Duration, SystemTime};
 
 use crate::errors::*;
 use crate::utils::*;
@@ -23,6 +28,7 @@ pub trait ReadOnly {
 pub trait ReadWrite: ReadOnly {
     fn write_file(&self, content: &[u8]) -> Result<()>;
     fn delete_file(&self) -> Result<()>;
+    fn create_file(&self, path: &str) -> Result<()>;
 }
 
 impl ReadOnly for LocTypes {
@@ -79,6 +85,18 @@ impl ReadWrite for LocTypes {
             LocTypes::SimpleFile(path) => Ok(delete(path)?),
         }
     }
+
+    fn create_file(&self, path: &str) -> Result<()> {
+        let result_path = format!("{}/{}", self.to_string(), path);
+        match self {
+            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Folder(_) => Ok(create(&result_path)?),
+            LocTypes::Zip(_) => {
+                Err(FileErrors::InvalidFileForWriting("ZIP file is read-only".to_string()).into())
+            }
+            LocTypes::SimpleFile(_) => Ok(create(&result_path)?),
+        }
+    }
 }
 
 fn duplicate_newer_file(
@@ -86,17 +104,20 @@ fn duplicate_newer_file(
     file_2: (String, (LocTypes, SystemTime, String)),
 ) -> Result<()> {
     let (newer_file, older_file) = {
-        if file_1.1 .1 > file_2.1 .1 {
-            println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-            (file_1, file_2)
-        } else if file_1.1 .1 < file_2.1 .1 {
-            println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-            (file_2, file_1)
-        } else {
-            return Ok(()); // Same file
+        match file_1.1 .1.cmp(&file_2.1 .1) {
+            Ordering::Greater => {
+                println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
+                (file_1, file_2)
+            }
+            Ordering::Less => {
+                println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
+                (file_2, file_1)
+            }
+            Ordering::Equal => return Ok(()), // Same file
         }
     };
     let bytes = newer_file.1 .0.read_file();
+    println!("Reading: {}", newer_file.1 .0.to_string());
     let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
     match bytes {
         Some(bytes) => {
@@ -151,8 +172,10 @@ impl Synchronizer {
 
     pub fn sync(&self) -> Result<()> {
         self.initial_sync()?;
-
+        // Now all the locations should be synchronized
         loop {
+            // Listen for any changhes and sync
+            println!("Loop");
             self.continous_sync()?;
         }
     }
@@ -173,15 +196,7 @@ impl Synchronizer {
                         let file_2 = files2.get_key_value(&file_1.0).unwrap();
                         match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
                             (LocTypes::Ftp(_), LocTypes::Ftp(_)) => {}
-                            (LocTypes::Ftp(_), LocTypes::Zip(_)) => {}
                             (LocTypes::Ftp(_), LocTypes::SimpleFile(_)) => {}
-                            (LocTypes::Ftp(_), LocTypes::Folder(_)) => {}
-                            (LocTypes::Zip(path), LocTypes::Folder(_)) => {
-                                println!("ZIP-Folder");
-                            }
-                            (LocTypes::Zip(path), LocTypes::Ftp(_)) => {
-                                println!("ZIP-FTP");
-                            }
                             (LocTypes::Zip(path), LocTypes::SimpleFile(_)) => {
                                 println!("ZIP: {path} - FILE");
                                 if file_1.1 .1 > file_2.1 .1 {
@@ -191,12 +206,7 @@ impl Synchronizer {
                                     )?;
                                 }
                             }
-                            (LocTypes::Zip(path), LocTypes::Zip(_)) => {
-                                println!("ZIP-ZIP");
-                            }
-                            (LocTypes::SimpleFile(_), LocTypes::Folder(_)) => {
-                                println!("FILE-FOLDER");
-                            }
+                            (LocTypes::Zip(_), LocTypes::Ftp(_)) => {}
                             (LocTypes::SimpleFile(_), LocTypes::SimpleFile(_)) => {
                                 println!("FILE-FILE");
                                 duplicate_newer_file(file_1, (file_2.0.clone(), file_2.1.clone()))?;
@@ -204,24 +214,35 @@ impl Synchronizer {
                             (LocTypes::SimpleFile(_), LocTypes::Ftp(_)) => {
                                 println!("FILE-FTP");
                             }
-                            (LocTypes::SimpleFile(_), LocTypes::Zip(_)) => {
-                                println!("FILE-ZIP SKIP");
-                            }
-                            (LocTypes::Folder(path), LocTypes::Folder(_)) => {
-                                println!("FOLDER-FOLDER SKIP");
-                            }
-                            (LocTypes::Folder(path), LocTypes::Zip(_)) => {
-                                println!("FOLDER-FOLDER");
-                            }
-                            (LocTypes::Folder(path), LocTypes::Ftp(_)) => {
-                                println!("FOLDER-FOLDER");
-                            }
-                            (LocTypes::Folder(path), LocTypes::SimpleFile(_)) => {
-                                println!("FOLDER-FOLDER");
-                            }
+                            _ => {}
                         }
                     } else {
-                        // If only a location contains a file, the file is duplicated to the other location
+                        // If only a location contains the file, the file is duplicated to the other location
+                        match loc2 {
+                            LocTypes::Ftp(path) => {}
+                            LocTypes::Folder(_) => match file_1.1 .0 {
+                                LocTypes::Zip(_) | LocTypes::SimpleFile(_) => {
+                                    loc2.create_file(&file_1.0.to_string())?;
+                                    let bytes = file_1.1 .0.read_file();
+                                    match bytes {
+                                        Some(bytes) => {
+                                            let new_file_path =
+                                                format!("{}/{}", loc2, &file_1.0.to_string());
+                                            let new_file = LocTypes::SimpleFile(new_file_path);
+                                            new_file.write_file(&bytes)?;
+                                        }
+                                        None => {
+                                            return Err(FileErrors::InvalidFileForReading(
+                                                "Couldn't read file".to_string(),
+                                            )
+                                            .into());
+                                        }
+                                    };
+                                }
+                                _ => {}
+                            },
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -230,6 +251,39 @@ impl Synchronizer {
     }
 
     fn continous_sync(&self) -> Result<()> {
+        let (tx, rx) = mpsc::channel::<Result<notify::Event, notify::Error>>(); // Correct type
+        let mut watchers = Vec::new();
+        for loc in &self.locations {
+            if let LocTypes::Folder(path) = loc {
+                let mut watcher = notify::recommended_watcher(tx.clone())?;
+                watcher.watch(Path::new(path), RecursiveMode::Recursive)?;
+                watchers.push(watcher);
+            }
+        }
+
+        for res in rx {
+            match res {
+                Ok(event) => match event.kind {
+                    notify::EventKind::Create(_) => {
+                        println!("File created: {:?}", event.paths);
+                    }
+                    notify::EventKind::Modify(modif_kind) => match modif_kind {
+                        ModifyKind::Name(_) => {
+                            println!("File removed: {:?}", event.paths);
+                        }
+                        ModifyKind::Data(_) => {
+                            println!("File modified: {:?}", event.paths);
+                        }
+                        _ => {}
+                    },
+                    notify::EventKind::Remove(_) => {
+                        println!("File removed: {:?}", event.paths);
+                    }
+                    _ => {}
+                },
+                Err(e) => println!("watch error: {:?}", e),
+            }
+        }
         Ok(())
     }
 }
