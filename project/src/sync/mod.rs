@@ -1,6 +1,6 @@
 use anyhow::Result;
 use filetime::FileTime;
-use notify::event::{ModifyKind, RenameMode};
+use notify::event::{CreateKind, ModifyKind, RenameMode};
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -12,8 +12,8 @@ use std::time::{Duration, SystemTime};
 use crate::errors::*;
 use crate::utils::*;
 
-mod modes;
-use modes::SyncMode;
+pub mod modes;
+pub use modes::{CreateType, SyncMode};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum LocTypes {
@@ -31,7 +31,7 @@ pub trait ReadOnly {
 pub trait ReadWrite: ReadOnly {
     fn write_file(&self, content: &[u8]) -> Result<()>;
     fn delete_file(&self) -> Result<()>;
-    fn create_file(&self, path: &str) -> Result<()>;
+    fn create_file(&self, path: &str, create_type: CreateType) -> Result<()>;
 }
 
 impl ReadOnly for LocTypes {
@@ -89,15 +89,15 @@ impl ReadWrite for LocTypes {
         }
     }
 
-    fn create_file(&self, path: &str) -> Result<()> {
+    fn create_file(&self, path: &str, create_type: CreateType) -> Result<()> {
         let result_path = format!("{}/{}", self.to_string(), path);
         match self {
             LocTypes::Ftp(url) => Ok(()),
-            LocTypes::Folder(_) => Ok(create(&result_path)?),
+            LocTypes::Folder(_) => Ok(create(&result_path, create_type)?),
             LocTypes::Zip(_) => {
                 Err(FileErrors::InvalidFileForWriting("ZIP file is read-only".to_string()).into())
             }
-            LocTypes::SimpleFile(_) => Ok(create(&result_path)?),
+            LocTypes::SimpleFile(_) => Ok(create(&result_path, create_type)?),
         }
     }
 }
@@ -240,8 +240,7 @@ impl Synchronizer {
                                         // ZIP files are read-only so they can not be deleted
                                     }
                                     _ => {
-                                        println!("TEST: {}", &file_1.0);
-                                        loc2.create_file(&file_1.0.to_string())?;
+                                        loc2.create_file(&file_1.0.to_string(), CreateType::File)?;
                                         let bytes = file_1.1 .0.read_file();
                                         match bytes {
                                             Some(bytes) => {
@@ -262,6 +261,11 @@ impl Synchronizer {
                                 LocTypes::Folder(_) => {
                                     if let SyncMode::Delete = mode {
                                         file_1.1 .0.delete_file()?;
+                                    } else {
+                                        loc2.create_file(
+                                            &file_1.0.to_string(),
+                                            CreateType::Folder,
+                                        )?;
                                     }
                                 }
                                 _ => {}

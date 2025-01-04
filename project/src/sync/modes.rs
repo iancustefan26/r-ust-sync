@@ -4,3 +4,8 @@ pub enum SyncMode {
     Delete,
     Any,
 }
+
+pub enum CreateType {
+    File,
+    Folder,
+}

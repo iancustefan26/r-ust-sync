@@ -9,6 +9,7 @@ use std::{fs, time};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+pub use crate::sync::modes::CreateType;
 pub use crate::sync::*;
 
 pub fn list_files_in_zip(
@@ -168,29 +169,38 @@ pub fn delete(path: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn create(path: &str) -> Result<()> {
-    let path = Path::new(path);
+pub fn create(path: &str, create_type: CreateType) -> Result<()> {
+    match create_type {
+        CreateType::Folder => {
+            fs::create_dir_all(path)?;
+            println!("Created: {:?}", path);
+            Ok(())
+        }
+        CreateType::File => {
+            let path = Path::new(path);
 
-    if let Ok(meta) = metadata(path) {
-        if meta.is_file() {
-            // If the path already exists and is a file
-            println!("File exists: {:?}", path);
-            return Ok(());
-        } else if meta.is_dir() {
-            // If the path already exists and is a directory
-            println!("Path exists as a directory: {:?}", path);
-            return Ok(());
+            if let Ok(meta) = metadata(path) {
+                if meta.is_file() {
+                    // If the path already exists and is a file
+                    println!("File exists: {:?}", path);
+                    return Ok(());
+                } else if meta.is_dir() {
+                    // If the path already exists and is a directory
+                    println!("Path exists as a directory: {:?}", path);
+                    return Ok(());
+                }
+            }
+
+            // If the path doesn't exist or isn't a file, create it
+            if let Some(parent) = path.parent() {
+                create_dir_all(parent)?;
+            }
+
+            File::create(path)?;
+            println!("Created: {:?}", path);
+            Ok(())
         }
     }
-
-    // If the path doesn't exist or isn't a file, create it
-    if let Some(parent) = path.parent() {
-        create_dir_all(parent)?;
-    }
-
-    File::create(path)?;
-    println!("Created: {:?}", path);
-    Ok(())
 }
 
 fn relative_path(base: &str, target: &str) -> Option<String> {
