@@ -20,7 +20,7 @@ pub fn list_files_in_zip(
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        if file.is_dir() {
+        if file.is_dir() || file.name().contains(".DS") {
             continue;
         }
         let file_path = format!("{}/{}", zip_path, file.name());
@@ -73,6 +73,7 @@ pub fn list_files_in_zip(
             (LocTypes::Zip(file_path), system_time, human_readable_time),
         );
     }
+
     Ok(files)
 }
 
@@ -82,6 +83,9 @@ pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, Syst
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         let entry_path = entry.path().to_str().unwrap().to_string();
+        if entry_path.contains(".DS") {
+            continue;
+        }
         let last_modified_tuple = get_last_modified_time(&entry_path)?;
         let rel_path = relative_path(dir, &entry_path).unwrap();
         /*
@@ -160,7 +164,7 @@ pub fn delete(path: &str) -> Result<()> {
     } else {
         return Err(anyhow::anyhow!("No such file or directory"));
     }
-
+    println!("Deleted function: {:?}", path);
     Ok(())
 }
 

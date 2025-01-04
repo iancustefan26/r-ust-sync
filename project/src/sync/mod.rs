@@ -12,7 +12,10 @@ use std::time::{Duration, SystemTime};
 use crate::errors::*;
 use crate::utils::*;
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+mod modes;
+use modes::SyncMode;
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum LocTypes {
     Ftp(String),    // ftp:user:password@URL/path
     Zip(String),    // zip:/path/to/archive.zip
@@ -171,16 +174,19 @@ impl Synchronizer {
     }
 
     pub fn sync(&self) -> Result<()> {
-        self.initial_sync()?;
+        self.initial_sync(SyncMode::Any)?;
         // Now all the locations should be synchronized
         loop {
             // Listen for any changhes and sync
             println!("Loop");
-            self.continous_sync()?;
+            match self.continous_sync() {
+                Ok(_) => println!("Quit."),
+                Err(e) => println!("Encountered some error: {}", e),
+            }
         }
     }
 
-    fn initial_sync(&self) -> Result<()> {
+    fn initial_sync(&self, mode: modes::SyncMode) -> Result<()> {
         for loc1 in &self.locations {
             for loc2 in &self.locations {
                 if loc2 == loc1 {
@@ -198,7 +204,7 @@ impl Synchronizer {
                             (LocTypes::Ftp(_), LocTypes::Ftp(_)) => {}
                             (LocTypes::Ftp(_), LocTypes::SimpleFile(_)) => {}
                             (LocTypes::Zip(path), LocTypes::SimpleFile(_)) => {
-                                println!("ZIP: {path} - FILE");
+                                //println!("ZIP: {path} - FILE");
                                 if file_1.1 .1 > file_2.1 .1 {
                                     duplicate_newer_file_from_zip(
                                         file_1,
@@ -208,11 +214,11 @@ impl Synchronizer {
                             }
                             (LocTypes::Zip(_), LocTypes::Ftp(_)) => {}
                             (LocTypes::SimpleFile(_), LocTypes::SimpleFile(_)) => {
-                                println!("FILE-FILE");
+                                //println!("FILE-FILE");
                                 duplicate_newer_file(file_1, (file_2.0.clone(), file_2.1.clone()))?;
                             }
                             (LocTypes::SimpleFile(_), LocTypes::Ftp(_)) => {
-                                println!("FILE-FTP");
+                                //println!("FILE-FTP");
                             }
                             _ => {}
                         }
@@ -221,23 +227,42 @@ impl Synchronizer {
                         match loc2 {
                             LocTypes::Ftp(path) => {}
                             LocTypes::Folder(_) => match file_1.1 .0 {
-                                LocTypes::Zip(_) | LocTypes::SimpleFile(_) => {
-                                    loc2.create_file(&file_1.0.to_string())?;
-                                    let bytes = file_1.1 .0.read_file();
-                                    match bytes {
-                                        Some(bytes) => {
-                                            let new_file_path =
-                                                format!("{}/{}", loc2, &file_1.0.to_string());
-                                            let new_file = LocTypes::SimpleFile(new_file_path);
-                                            new_file.write_file(&bytes)?;
+                                LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
+                                    SyncMode::Delete => {
+                                        // If only a location cotnains this file and SyncMode is set to delete
+                                        // it means that from the other location someone deleted a file and has
+                                        // to be deleted also from this location
+                                        if let LocTypes::SimpleFile(_) = file_1.1 .0 {
+                                            file_1.1 .0.delete_file()?;
+                                        } else {
+                                            self.initial_sync(SyncMode::Any)?;
                                         }
-                                        None => {
-                                            return Err(FileErrors::InvalidFileForReading(
-                                                "Couldn't read file".to_string(),
-                                            )
-                                            .into());
-                                        }
-                                    };
+                                        // ZIP files are read-only so they can not be deleted
+                                    }
+                                    _ => {
+                                        println!("TEST: {}", &file_1.0);
+                                        loc2.create_file(&file_1.0.to_string())?;
+                                        let bytes = file_1.1 .0.read_file();
+                                        match bytes {
+                                            Some(bytes) => {
+                                                let new_file_path =
+                                                    format!("{}/{}", loc2, &file_1.0.to_string());
+                                                let new_file = LocTypes::SimpleFile(new_file_path);
+                                                new_file.write_file(&bytes)?;
+                                            }
+                                            None => {
+                                                return Err(FileErrors::InvalidFileForReading(
+                                                    "Couldn't read file".to_string(),
+                                                )
+                                                .into());
+                                            }
+                                        };
+                                    }
+                                },
+                                LocTypes::Folder(_) => {
+                                    if let SyncMode::Delete = mode {
+                                        file_1.1 .0.delete_file()?;
+                                    }
                                 }
                                 _ => {}
                             },
@@ -261,26 +286,37 @@ impl Synchronizer {
             }
         }
 
-        for res in rx {
+        'result_loop: for res in rx {
             match res {
-                Ok(event) => match event.kind {
-                    notify::EventKind::Create(_) => {
-                        println!("File created: {:?}", event.paths);
-                    }
-                    notify::EventKind::Modify(modif_kind) => match modif_kind {
-                        ModifyKind::Name(_) => {
-                            println!("File removed: {:?}", event.paths);
+                Ok(event) => {
+                    for path in &event.paths {
+                        if path.as_path().to_str().unwrap().contains(".DS") {
+                            continue 'result_loop;
                         }
-                        ModifyKind::Data(_) => {
-                            println!("File modified: {:?}", event.paths);
+                    }
+                    match event.kind {
+                        notify::EventKind::Create(_) => {
+                            println!("File created: {:?}", event.paths);
+                            self.initial_sync(SyncMode::Create)?;
+                        }
+                        notify::EventKind::Modify(modif_kind) => match modif_kind {
+                            ModifyKind::Name(_) => {
+                                println!("File removed: {:?}", event.paths);
+                                self.initial_sync(SyncMode::Delete)?;
+                            }
+                            ModifyKind::Data(_) => {
+                                println!("File modified: {:?}", event.paths);
+                                self.initial_sync(SyncMode::Modify)?;
+                            }
+                            _ => {}
+                        },
+                        notify::EventKind::Remove(_) => {
+                            println!("File removed: {:?}", event.paths);
+                            self.initial_sync(SyncMode::Delete)?;
                         }
                         _ => {}
-                    },
-                    notify::EventKind::Remove(_) => {
-                        println!("File removed: {:?}", event.paths);
                     }
-                    _ => {}
-                },
+                }
                 Err(e) => println!("watch error: {:?}", e),
             }
         }
