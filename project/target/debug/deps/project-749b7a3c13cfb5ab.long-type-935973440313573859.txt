@@ -1,1 +1,0 @@
-std::result::Result<std::collections::HashMap<std::string::String, (sync::LocTypes, std::time::SystemTime, std::string::String)>, notify::Error>
