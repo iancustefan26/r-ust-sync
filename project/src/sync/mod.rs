@@ -1,6 +1,6 @@
 use anyhow::Result;
 use filetime::FileTime;
-use ftp::connect_to_ftp;
+use ftp::{connect_to_ftp, read_ftp_file};
 use notify::event::{CreateKind, ModifyKind, RenameMode};
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 use std::cmp::Ordering;
@@ -51,10 +51,7 @@ impl ReadOnly for LocTypes {
 
     fn read_file(&self) -> Option<Vec<u8>> {
         match self {
-            LocTypes::Ftp(user, pass, url, path) => {
-                // FTP logic
-                None
-            }
+            LocTypes::Ftp(user, pass, url, path) => read_ftp_file(user, pass, url, path),
             LocTypes::Zip(path) => file_as_bytes(path),
             LocTypes::Folder(_) => None,
             LocTypes::SimpleFile(path) => file_as_bytes(path),
@@ -176,7 +173,15 @@ impl Synchronizer {
         for loc in &self.locations {
             let files = loc.list_files()?;
             for file in files {
-                println!("{} - {}", file.1 .0, file.1 .2);
+                if let LocTypes::Ftp(_, _, _, _) = loc {
+                    //let bytes = file.1 .0.read_file().unwrap();
+                    println!(
+                        "{} - {} - bytes : {:?}",
+                        file.0,
+                        file.1 .2,
+                        file.1 .0.read_file().unwrap()
+                    );
+                }
             }
         }
         self.initial_sync(SyncMode::Any)?;
@@ -209,10 +214,19 @@ impl Synchronizer {
                             (
                                 LocTypes::Ftp(user, pass, url, path),
                                 LocTypes::Ftp(user2, pass2, url2, path2),
-                            ) => {}
-                            (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {}
-                            (LocTypes::Zip(path), LocTypes::SimpleFile(_)) => {
-                                //println!("ZIP: {path} - FILE");
+                            ) => {
+                                // Extract the file from The FTP1 server and PUT it into FTP2 server
+                            }
+                            (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, path)) => {
+                                // PUT the file into FTP server
+                            }
+                            (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {
+                                // Extract the ZIP file and PUT it onto the FTP server if it's newer
+                            }
+                            (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {
+                                // Extract the file from the FTP server if it's newer and replace it on my machine
+                            }
+                            (LocTypes::Zip(_), LocTypes::SimpleFile(_)) => {
                                 if file_1.1 .1 > file_2.1 .1 {
                                     duplicate_newer_file_from_zip(
                                         file_1,
@@ -220,13 +234,8 @@ impl Synchronizer {
                                     )?;
                                 }
                             }
-                            (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {}
                             (LocTypes::SimpleFile(_), LocTypes::SimpleFile(_)) => {
-                                //println!("FILE-FILE");
                                 duplicate_newer_file(file_1, (file_2.0.clone(), file_2.1.clone()))?;
-                            }
-                            (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, path)) => {
-                                //println!("FILE-FTP");
                             }
                             _ => {}
                         }

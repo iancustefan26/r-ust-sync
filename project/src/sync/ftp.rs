@@ -3,7 +3,6 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDateTime};
 use ftp::FtpStream;
 use std::collections::HashMap;
-
 use std::time::SystemTime;
 
 pub fn connect_to_ftp(
@@ -19,7 +18,15 @@ pub fn connect_to_ftp(
     ftp_stream.cwd(path)?;
 
     let mut files: HashMap<String, (LocTypes, SystemTime, String)> = HashMap::new();
-    recursive_list(&mut ftp_stream, "".to_string(), &mut files)?;
+    recursive_list(
+        user,
+        password,
+        url,
+        path.to_string(),
+        "".to_string(),
+        &mut ftp_stream,
+        &mut files,
+    )?;
 
     ftp_stream.quit()?;
 
@@ -27,42 +34,62 @@ pub fn connect_to_ftp(
 }
 
 fn recursive_list(
+    user: &str,
+    pass: &str,
+    url: &str,
+    root_path: String,
+    rel_path: String,
     ftp_stream: &mut FtpStream,
-    current_path: String,
     hash_map: &mut HashMap<String, (LocTypes, SystemTime, String)>,
 ) -> Result<()> {
     let entries = ftp_stream.list(None)?;
 
     for entry in entries {
         let (entry, system_time, human_read_systime) = extract_ftp_file_data(entry);
-        let path = format!("{}{}", current_path, entry);
-        // Try changing into the entry to check if it’s a directory
+        let abs_path = format!("{}/{}", root_path.clone(), entry);
+        let rel_path = format!("{}/{}", rel_path.clone(), entry)
+            .trim_start_matches("/")
+            .to_string();
         if ftp_stream.cwd(&entry).is_ok() {
             // Insert folder info before recursion
             hash_map.insert(
-                path.clone(),
+                rel_path.clone(),
                 (
-                    LocTypes::Folder(path.clone()),
+                    LocTypes::Ftp(
+                        user.to_string(),
+                        pass.to_string(),
+                        url.to_string(),
+                        abs_path.clone(),
+                    ),
                     system_time,
                     human_read_systime,
                 ),
             );
-
             // Recursive call to process subdirectory
             {
                 // Create a shorter borrow scope for the recursive call
-                let new_path = format!("{}/", entry);
-                recursive_list(ftp_stream, new_path, hash_map)?;
+                let new_root_path = format!("{}/{}", root_path, entry);
+                recursive_list(
+                    user,
+                    pass,
+                    url,
+                    new_root_path,
+                    rel_path,
+                    ftp_stream,
+                    hash_map,
+                )?;
             }
-
-            // Navigate back to the parent directory
             ftp_stream.cdup()?; // cd ..
         } else {
-            // Insert file info
             hash_map.insert(
-                path.clone(),
+                rel_path.clone(),
                 (
-                    LocTypes::SimpleFile(path.clone()),
+                    LocTypes::Ftp(
+                        user.to_string(),
+                        pass.to_string(),
+                        url.to_string(),
+                        abs_path.clone(),
+                    ),
                     system_time,
                     human_read_systime,
                 ),
@@ -103,4 +130,24 @@ fn extract_ftp_file_data(entry: String) -> (String, SystemTime, String) {
     let human_readable = naive_datetime.format("%Y-%m-%d %H:%M:%S").to_string();
 
     (file_name, system_time, human_readable)
+}
+
+pub fn read_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Option<Vec<u8>> {
+    let mut ftp_stream = FtpStream::connect(format!("{}:21", url)).ok()?;
+
+    ftp_stream.login(user, pass).ok()?;
+
+    if ftp_stream.cwd(path).is_ok() {
+        ftp_stream.cdup().ok()?; // cd ..
+        return Some(Vec::new());
+    }
+
+    if let Some((dir, file_name)) = path.rsplit_once('/') {
+        ftp_stream.cwd(dir).ok()?;
+        let reader = ftp_stream.simple_retr(file_name).ok()?;
+        Some(reader.into_inner())
+    } else {
+        let reader = ftp_stream.simple_retr(path).ok()?;
+        Some(reader.into_inner())
+    }
 }
