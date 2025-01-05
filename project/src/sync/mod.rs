@@ -1,5 +1,6 @@
 use anyhow::Result;
 use filetime::FileTime;
+use ftp::connect_to_ftp;
 use notify::event::{CreateKind, ModifyKind, RenameMode};
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 use std::cmp::Ordering;
@@ -12,14 +13,15 @@ use std::time::{Duration, SystemTime};
 use crate::errors::*;
 use crate::utils::*;
 
+mod ftp;
 pub mod modes;
 pub use modes::{CreateType, SyncMode};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum LocTypes {
-    Ftp(String),    // ftp:user:password@URL/path
-    Zip(String),    // zip:/path/to/archive.zip
-    Folder(String), // folder:/path/to/folder
+    Ftp(String, String, String, String), // ftp:user:password@URL/path
+    Zip(String),                         // zip:/path/to/archive.zip
+    Folder(String),                      // folder:/path/to/folder
     SimpleFile(String),
 }
 
@@ -37,10 +39,7 @@ pub trait ReadWrite: ReadOnly {
 impl ReadOnly for LocTypes {
     fn list_files(&self) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
         match self {
-            LocTypes::Ftp(url) => {
-                // FTP logic
-                Ok(HashMap::new())
-            }
+            LocTypes::Ftp(user, pass, url, path) => Ok(connect_to_ftp(user, pass, url, path)?),
             LocTypes::Zip(path) => Ok(list_files_in_zip(path)?),
             LocTypes::Folder(path) => Ok(list_files_recursive(path)?),
             LocTypes::SimpleFile(_) => Err(FileErrors::InvalidFileForListing(
@@ -52,7 +51,7 @@ impl ReadOnly for LocTypes {
 
     fn read_file(&self) -> Option<Vec<u8>> {
         match self {
-            LocTypes::Ftp(url) => {
+            LocTypes::Ftp(user, pass, url, path) => {
                 // FTP logic
                 None
             }
@@ -66,7 +65,7 @@ impl ReadOnly for LocTypes {
 impl ReadWrite for LocTypes {
     fn write_file(&self, content: &[u8]) -> Result<()> {
         match self {
-            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Ftp(user, pass, url, path) => Ok(()),
             LocTypes::Folder(_) => Err(FileErrors::InvalidFileForWriting(
                 "A folder can't be written".to_string(),
             )
@@ -80,7 +79,7 @@ impl ReadWrite for LocTypes {
 
     fn delete_file(&self) -> Result<()> {
         match self {
-            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Ftp(user, pass, url, path) => Ok(()),
             LocTypes::Folder(path) => Ok(delete(path)?),
             LocTypes::Zip(_) => {
                 Err(FileErrors::InvalidFileForDelete("ZIP file is read-only".to_string()).into())
@@ -92,7 +91,7 @@ impl ReadWrite for LocTypes {
     fn create_file(&self, path: &str, create_type: CreateType) -> Result<()> {
         let result_path = format!("{}/{}", self.to_string(), path);
         match self {
-            LocTypes::Ftp(url) => Ok(()),
+            LocTypes::Ftp(user, pass, url, path) => Ok(()),
             LocTypes::Folder(_) => Ok(create(&result_path, create_type)?),
             LocTypes::Zip(_) => {
                 Err(FileErrors::InvalidFileForWriting("ZIP file is read-only".to_string()).into())
@@ -174,6 +173,12 @@ impl Synchronizer {
     }
 
     pub fn sync(&self) -> Result<()> {
+        for loc in &self.locations {
+            let files = loc.list_files()?;
+            for file in files {
+                println!("{} - {}", file.1 .0, file.1 .2);
+            }
+        }
         self.initial_sync(SyncMode::Any)?;
         // Now all the locations should be synchronized
         loop {
@@ -201,8 +206,11 @@ impl Synchronizer {
                         // If both locations contain a file, the newer version is copied
                         let file_2 = files2.get_key_value(&file_1.0).unwrap();
                         match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
-                            (LocTypes::Ftp(_), LocTypes::Ftp(_)) => {}
-                            (LocTypes::Ftp(_), LocTypes::SimpleFile(_)) => {}
+                            (
+                                LocTypes::Ftp(user, pass, url, path),
+                                LocTypes::Ftp(user2, pass2, url2, path2),
+                            ) => {}
+                            (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {}
                             (LocTypes::Zip(path), LocTypes::SimpleFile(_)) => {
                                 //println!("ZIP: {path} - FILE");
                                 if file_1.1 .1 > file_2.1 .1 {
@@ -212,12 +220,12 @@ impl Synchronizer {
                                     )?;
                                 }
                             }
-                            (LocTypes::Zip(_), LocTypes::Ftp(_)) => {}
+                            (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {}
                             (LocTypes::SimpleFile(_), LocTypes::SimpleFile(_)) => {
                                 //println!("FILE-FILE");
                                 duplicate_newer_file(file_1, (file_2.0.clone(), file_2.1.clone()))?;
                             }
-                            (LocTypes::SimpleFile(_), LocTypes::Ftp(_)) => {
+                            (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, path)) => {
                                 //println!("FILE-FTP");
                             }
                             _ => {}
@@ -225,7 +233,7 @@ impl Synchronizer {
                     } else {
                         // If only a location contains the file, the file is duplicated to the other location
                         match loc2 {
-                            LocTypes::Ftp(path) => {}
+                            LocTypes::Ftp(user, pass, url, path) => {}
                             LocTypes::Folder(_) => match file_1.1 .0 {
                                 LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
                                     SyncMode::Delete => {
@@ -344,7 +352,7 @@ impl fmt::Display for LocTypes {
 impl fmt::Display for LocTypes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LocTypes::Ftp(details) => write!(f, "{}", details),
+            LocTypes::Ftp(user, pass, url, path) => write!(f, "{}:{}@{}/{}", user, pass, url, path),
             LocTypes::Zip(path) => write!(f, "{}", path),
             LocTypes::Folder(path) => write!(f, "{}", path),
             LocTypes::SimpleFile(path) => write!(f, "{}", path),

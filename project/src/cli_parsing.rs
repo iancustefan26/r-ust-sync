@@ -94,7 +94,15 @@ pub fn retrieve_locations() -> Result<Vec<LocTypes>> {
             let type_path = line.split_once(":").unwrap();
             match type_path.0 {
                 "ftp" => {
-                    locations.push(LocTypes::Ftp(type_path.1.to_string()));
+                    let (user_pass, url_path) = type_path.1.split_once("@").unwrap_or_default();
+                    let user_pass = user_pass.split_once(":").unwrap_or_default();
+                    let url_path = url_path.split_once("/").unwrap_or_default();
+                    locations.push(LocTypes::Ftp(
+                        user_pass.0.to_string(),
+                        user_pass.1.to_string(),
+                        url_path.0.to_string(),
+                        url_path.1.to_string(),
+                    ));
                 }
                 "folder" => {
                     locations.push(LocTypes::Folder(type_path.1.to_string()));
