@@ -250,3 +250,35 @@ pub fn create_ftp_file(
     ftp_stream.quit()?;
     Ok(())
 }
+
+pub fn delete_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Result<()> {
+    // Connect to the FTP server
+    let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
+    ftp_stream.login(user, pass)?;
+
+    recursive_delete(&mut ftp_stream, path)?;
+
+    ftp_stream.quit()?;
+    Ok(())
+}
+
+fn recursive_delete(ftp_stream: &mut FtpStream, path: &str) -> Result<()> {
+    // Check if the path is a directory
+    if ftp_stream.cwd(path).is_ok() {
+        // If it's a directory, list its contents
+        let items = ftp_stream.nlst(Some(path))?;
+        for item in items {
+            let item_path = format!("{}/{}", path, item);
+            // Recursively delete the item
+            recursive_delete(ftp_stream, &item_path)?;
+        }
+        // Change back to parent directory before deleting
+        ftp_stream.cdup()?;
+        // Delete the directory itself
+        ftp_stream.rmdir(path)?;
+    } else {
+        // If it's a file, delete it
+        ftp_stream.rm(path)?;
+    }
+    Ok(())
+}

@@ -77,7 +77,7 @@ impl ReadWrite for LocTypes {
 
     fn delete_file(&self) -> Result<()> {
         match self {
-            LocTypes::Ftp(user, pass, url, path) => Ok(()),
+            LocTypes::Ftp(user, pass, url, path) => Ok(delete_ftp_file(user, pass, url, path)?),
             LocTypes::Folder(path) => Ok(delete(path)?),
             LocTypes::Zip(_) => {
                 Err(FileErrors::InvalidFileForDelete("ZIP file is read-only".to_string()).into())
@@ -245,10 +245,6 @@ impl Synchronizer {
                                 // Extract the file from the FTP server if it's newer and replace it on my machine
                                 println!("Zip-FTP");
                             }
-                            (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {
-                                // Extract the file from the FTP server if it's newer and replace it on my machine
-                                println!("FTP-File");
-                            }
                             (LocTypes::Zip(_), LocTypes::SimpleFile(_)) => {
                                 if file_1.1 .1 > file_2.1 .1 {
                                     duplicate_newer_file_from_zip(
@@ -278,7 +274,7 @@ impl Synchronizer {
                                         }
                                         // ZIP files are read-only so they can not be deleted
                                     }
-                                    SyncMode::Any => {
+                                    _ => {
                                         loc2.create_file(&file_1.0.to_string(), CreateType::File)?;
                                         let bytes = file_1.1 .0.read_file();
                                         match bytes {
@@ -304,7 +300,6 @@ impl Synchronizer {
                                             }
                                         };
                                     }
-                                    _ => {}
                                 },
                                 _ => {}
                             },
