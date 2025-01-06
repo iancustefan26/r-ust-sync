@@ -266,7 +266,7 @@ fn recursive_delete(ftp_stream: &mut FtpStream, path: &str) -> Result<()> {
     // Check if the path is a directory
     if ftp_stream.cwd(path).is_ok() {
         // If it's a directory, list its contents
-        let items = ftp_stream.nlst(Some(path))?;
+        let items = ftp_stream.nlst(None)?;
         for item in items {
             let item_path = format!("{}/{}", path, item);
             // Recursively delete the item
@@ -275,7 +275,8 @@ fn recursive_delete(ftp_stream: &mut FtpStream, path: &str) -> Result<()> {
         // Change back to parent directory before deleting
         ftp_stream.cdup()?;
         // Delete the directory itself
-        ftp_stream.rmdir(path)?;
+        let dir = path.rsplit_once("/").unwrap_or(("", path));
+        ftp_stream.rmdir(dir.1)?;
     } else {
         // If it's a file, delete it
         ftp_stream.rm(path)?;
