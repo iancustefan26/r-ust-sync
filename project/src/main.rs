@@ -9,7 +9,7 @@ pub mod utils;
 fn main() -> Result<()> {
     cli_parsing::parse_args()?;
     let locations = cli_parsing::retrieve_locations()?;
-    let adv_rsync = Synchronizer::new(locations);
+    let mut adv_rsync = Synchronizer::new(locations, None);
     adv_rsync.sync()?;
     Ok(())
 }

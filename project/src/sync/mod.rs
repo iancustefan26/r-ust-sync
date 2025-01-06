@@ -18,6 +18,8 @@ pub mod modes;
 use ftp::*;
 pub use modes::{CreateType, SyncMode};
 
+type FtpServers = Option<Vec<HashMap<String, (LocTypes, SystemTime, String)>>>;
+
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum LocTypes {
     Ftp(String, String, String, String), // ftp:user:password@URL/path
@@ -166,14 +168,18 @@ fn duplicate_newer_file_from_zip(
 // Sync logic
 pub struct Synchronizer {
     locations: Vec<LocTypes>,
+    prev_ftp_files: FtpServers,
 }
 
 impl Synchronizer {
-    pub fn new(locations: Vec<LocTypes>) -> Self {
-        Self { locations }
+    pub fn new(locations: Vec<LocTypes>, option: FtpServers) -> Self {
+        Self {
+            locations,
+            prev_ftp_files: option,
+        }
     }
 
-    pub fn sync(&self) -> Result<()> {
+    pub fn sync(&mut self) -> Result<()> {
         self.initial_sync(SyncMode::Any)?;
         // Now all the locations should be synchronized
         loop {
@@ -301,6 +307,7 @@ impl Synchronizer {
                                         };
                                     }
                                 },
+
                                 _ => {}
                             },
                             LocTypes::Folder(_) => match file_1.clone().1 .0 {
@@ -390,7 +397,7 @@ impl Synchronizer {
         Ok(())
     }
 
-    fn continous_sync(&self) -> Result<()> {
+    fn continous_sync(&mut self) -> Result<()> {
         let (tx, rx) = mpsc::channel::<Result<notify::Event, notify::Error>>(); // Correct type
         let mut watchers = Vec::new();
         for loc in &self.locations {
@@ -401,6 +408,36 @@ impl Synchronizer {
             }
         }
         'result_loop: for res in rx {
+            for loc in &self.locations {
+                if let LocTypes::Ftp(_, _, url, _) = loc {
+                    if let Some(ftp_servers) = &self.prev_ftp_files {
+                        for sv in ftp_servers {
+                            if let LocTypes::Ftp(_, _, url2, _) = &sv.iter().next().unwrap().1 .0 {
+                                if url == url2 {
+                                    let files = loc.list_files()?;
+                                    if files.len() < sv.clone().len() {
+                                        println!("AM DAT DELETE");
+                                        self.initial_sync(SyncMode::Delete)?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            self.prev_ftp_files = {
+                let mut ftps = Vec::new();
+                for loc in &self.locations {
+                    if let LocTypes::Ftp(_, _, _, _) = loc {
+                        ftps.push(loc.list_files()?);
+                    }
+                }
+                if ftps.is_empty() {
+                    None
+                } else {
+                    Some(ftps)
+                }
+            };
             match res {
                 Ok(event) => {
                     for path in &event.paths {
