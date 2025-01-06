@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 use zip::ZipArchive;
 
 use crate::cli_parsing;
+use crate::errors::FileErrors;
 pub use crate::sync::modes::CreateType;
 pub use crate::sync::*;
 
@@ -173,6 +174,12 @@ pub fn delete(path: &str) -> Result<()> {
 pub fn create(path: &str, create_type: CreateType) -> Result<()> {
     match create_type {
         CreateType::Folder => {
+            if path.contains(".") {
+                return Err(FileErrors::InvalidFileForCreating(
+                    "Folders that contain a dot (.) are not accepted. Please rename".to_string(),
+                )
+                .into());
+            }
             fs::create_dir_all(path)?;
             println!("Created: {:?}", path);
             Ok(())

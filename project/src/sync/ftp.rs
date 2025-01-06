@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::ptr::read;
 use std::time::SystemTime;
 
-use super::ReadOnly;
+use super::{CreateType, ReadOnly};
 
 pub fn connect_to_ftp(
     user: &str,
@@ -132,8 +132,6 @@ fn extract_ftp_file_data(entry: String) -> (String, SystemTime, String) {
     let naive_datetime = NaiveDateTime::parse_from_str(&datetime_str, "%Y %b %d %H:%M")
         .expect("Failed to parse datetime");
 
-    //ORIGINAL CODE:
-
     let system_time = SystemTime::UNIX_EPOCH
         + std::time::Duration::from_secs(naive_datetime.and_utc().timestamp() as u64);
 
@@ -208,5 +206,47 @@ pub fn replace_newer_ftp_file(
             println!("Byte mismatch: {} != {}", file_byte, ftp_file_byte);
         }
     }
+    Ok(())
+}
+
+pub fn create_ftp_file(
+    user: &str,
+    pass: &str,
+    url: &str,
+    path: &str,
+    create_type: CreateType,
+) -> Result<()> {
+    let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
+    ftp_stream.login(user, pass)?;
+
+    let path = Path::new(path);
+    if let Some(parent_dirs) = path.parent() {
+        for dir in parent_dirs.iter() {
+            let dir_str = dir.to_string_lossy();
+            if ftp_stream.cwd(&dir_str).is_err() {
+                // Dir does not exist, create it
+                ftp_stream.mkdir(&dir_str)?;
+                ftp_stream.cwd(&dir_str)?;
+            }
+        }
+    }
+    match create_type {
+        CreateType::File => {
+            let file_name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default();
+            let empty_bytes: Vec<u8> = Vec::new();
+            let mut file_contents = Cursor::new(empty_bytes);
+            ftp_stream.put(file_name, &mut file_contents)?;
+        }
+        CreateType::Folder => {
+            // if the path itself a directory
+            let dir_str = path.to_string_lossy();
+            ftp_stream.mkdir(&dir_str)?;
+        }
+    }
+    ftp_stream.quit()?;
     Ok(())
 }

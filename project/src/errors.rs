@@ -19,4 +19,6 @@ pub enum FileErrors {
     InvalidFileForDelete(String),
     #[error("Invalid file for reading: {0}")]
     InvalidFileForReading(String),
+    #[error("Invalid file for creating: {0}")]
+    InvalidFileForCreating(String),
 }

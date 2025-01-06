@@ -15,6 +15,7 @@ use crate::{errors::*, utils};
 
 mod ftp;
 pub mod modes;
+use ftp::*;
 pub use modes::{CreateType, SyncMode};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -86,9 +87,12 @@ impl ReadWrite for LocTypes {
     }
 
     fn create_file(&self, path: &str, create_type: CreateType) -> Result<()> {
-        let result_path = format!("{}/{}", self.to_string(), path);
+        let result_path = format!("{}/{}", self, path);
         match self {
-            LocTypes::Ftp(user, pass, url, path) => Ok(()),
+            LocTypes::Ftp(user, pass, url, ftp_path) => {
+                let result_path = format!("{}/{}", ftp_path, path);
+                Ok(create_ftp_file(user, pass, url, &result_path, create_type)?)
+            }
             LocTypes::Folder(_) => Ok(create(&result_path, create_type)?),
             LocTypes::Zip(_) => {
                 Err(FileErrors::InvalidFileForWriting("ZIP file is read-only".to_string()).into())
@@ -116,7 +120,7 @@ fn duplicate_newer_file(
         }
     };
     let bytes = newer_file.1 .0.read_file();
-    println!("Reading: {}", newer_file.1 .0.to_string());
+    println!("Reading: {}", newer_file.1 .0);
     let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
     match bytes {
         Some(bytes) => {
@@ -181,7 +185,7 @@ impl Synchronizer {
             });
             // Every 3 seconds if nothing happened perform a check (mostly for FTP stored files)
             // I will be doing this by creating a thread that creates a hidden file .temp_check and
-            // deletes it very fast in order to trigger the file wathcer so a complete sync check will be done
+            // deletes it very fast in order to trigger the file watcher so a complete sync check will be done
             match self.continous_sync() {
                 Ok(_) => println!("Quit."),
                 Err(e) => println!("Encountered some error: {}", e),
@@ -205,13 +209,6 @@ impl Synchronizer {
                         let file_2 = files2.get_key_value(&file_1.0).unwrap();
                         match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
                             (
-                                LocTypes::Ftp(user, pass, url, path),
-                                LocTypes::Ftp(user2, pass2, url2, path2),
-                            ) => {
-                                // Extract the file from The FTP1 server and PUT it into FTP2 server
-                                println!("FTP-FTP");
-                            }
-                            (
                                 LocTypes::SimpleFile(file_path),
                                 LocTypes::Ftp(user, pass, url, ftp_path),
                             ) => {
@@ -220,25 +217,32 @@ impl Synchronizer {
                                     "File-FTP : {} {}\n{} - {}",
                                     file_path, ftp_path, file_1.1 .2, file_2.1 .2
                                 );
-                                if file_1.1 .1 > file_2.1 .1 {
-                                    // The SimpleFile is newer and I have to PUT it on the FTP server
-                                    let file_bytes = file_1.1 .0.read_file().unwrap_or_default();
-                                    put_file(&file_bytes, &user, &pass, &url, &ftp_path)?;
-                                } else if file_1.1 .1 < file_2.1 .1 {
-                                    let bytes = file_2.1 .0.read_file().unwrap_or_default();
-                                    file_1.1 .0.write_file(&bytes)?;
-                                    let last_modif_time = FileTime::from_system_time(file_2.1 .1);
-                                    filetime::set_file_times(
-                                        file_1.1 .0.to_string(),
-                                        last_modif_time,
-                                        last_modif_time,
-                                    )?;
+                                match file_1.1 .1.cmp(&file_2.1 .1) {
+                                    std::cmp::Ordering::Greater => {
+                                        // The SimpleFile is newer and I have to PUT it on the FTP server
+                                        let file_bytes =
+                                            file_1.1 .0.read_file().unwrap_or_default();
+                                        put_file(&file_bytes, &user, &pass, &url, &ftp_path)?;
+                                    }
+                                    std::cmp::Ordering::Less => {
+                                        // The FTP file is newer and needs to overwrite the local file
+                                        let bytes = file_2.1 .0.read_file().unwrap_or_default();
+                                        file_1.1 .0.write_file(&bytes)?;
+                                        let last_modif_time =
+                                            FileTime::from_system_time(file_2.1 .1);
+                                        filetime::set_file_times(
+                                            file_1.1 .0.to_string(),
+                                            last_modif_time,
+                                            last_modif_time,
+                                        )?;
+                                    }
+                                    std::cmp::Ordering::Equal => {
+                                        // same file
+                                    }
                                 }
-
-                                // else it's the same file
                             }
                             (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {
-                                // Extract the ZIP file and PUT it onto the FTP server if it's newer
+                                // Extract the file from the FTP server if it's newer and replace it on my machine
                                 println!("Zip-FTP");
                             }
                             (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {
@@ -261,10 +265,50 @@ impl Synchronizer {
                     } else {
                         // If only a location contains the file, the file is duplicated to the other location
                         match loc2 {
-                            LocTypes::Ftp(user, pass, url, path) => {
-                                println!("FTP!!!!: {}", file_1.0);
-                            }
-                            LocTypes::Folder(_) => match file_1.1 .0 {
+                            LocTypes::Ftp(user, pass, url, ftp_path) => match file_1.1 .0 {
+                                LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
+                                    SyncMode::Delete => {
+                                        // If only a location cotnains this file and SyncMode is set to delete
+                                        // it means that from the other location someone deleted a file and has
+                                        // to be deleted also from this location
+                                        if let LocTypes::SimpleFile(_) = file_1.1 .0 {
+                                            file_1.1 .0.delete_file()?;
+                                        } else {
+                                            self.initial_sync(SyncMode::Any)?;
+                                        }
+                                        // ZIP files are read-only so they can not be deleted
+                                    }
+                                    SyncMode::Any => {
+                                        loc2.create_file(&file_1.0.to_string(), CreateType::File)?;
+                                        let bytes = file_1.1 .0.read_file();
+                                        match bytes {
+                                            Some(bytes) => {
+                                                let new_ftp_file_path = format!(
+                                                    "{}/{}",
+                                                    ftp_path,
+                                                    &file_1.0.to_string()
+                                                );
+                                                put_file(
+                                                    &bytes,
+                                                    user,
+                                                    pass,
+                                                    url,
+                                                    &new_ftp_file_path,
+                                                )?;
+                                            }
+                                            None => {
+                                                return Err(FileErrors::InvalidFileForReading(
+                                                    "Couldn't read file".to_string(),
+                                                )
+                                                .into());
+                                            }
+                                        };
+                                    }
+                                    _ => {}
+                                },
+                                _ => {}
+                            },
+                            LocTypes::Folder(_) => match file_1.clone().1 .0 {
                                 LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
                                     SyncMode::Delete => {
                                         // If only a location cotnains this file and SyncMode is set to delete
@@ -296,6 +340,41 @@ impl Synchronizer {
                                         };
                                     }
                                 },
+                                LocTypes::Ftp(user, pass, url, ftp_path) => match mode {
+                                    SyncMode::Delete => {
+                                        file_1.clone().1 .0.delete_file()?;
+                                    }
+                                    _ => {
+                                        let path = file_1.clone().0.to_string();
+                                        let file_create =
+                                            loc2.create_file(&path, CreateType::Folder);
+                                        if file_create.is_err() {
+                                            loc2.create_file(
+                                                &file_1.0.to_string(),
+                                                CreateType::File,
+                                            )?;
+                                            let bytes = file_1.clone().1 .0.read_file();
+                                            match bytes {
+                                                Some(bytes) => {
+                                                    let new_file_path = format!(
+                                                        "{}/{}",
+                                                        loc2,
+                                                        &file_1.0.to_string()
+                                                    );
+                                                    let new_file =
+                                                        LocTypes::SimpleFile(new_file_path);
+                                                    new_file.write_file(&bytes)?;
+                                                }
+                                                None => {
+                                                    return Err(FileErrors::InvalidFileForReading(
+                                                        "Couldn't read file".to_string(),
+                                                    )
+                                                    .into());
+                                                }
+                                            };
+                                        }
+                                    }
+                                },
                                 LocTypes::Folder(_) => {
                                     if let SyncMode::Delete = mode {
                                         file_1.1 .0.delete_file()?;
@@ -306,7 +385,6 @@ impl Synchronizer {
                                         )?;
                                     }
                                 }
-                                _ => {}
                             },
                             _ => {}
                         }
