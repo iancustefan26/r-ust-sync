@@ -1,22 +1,22 @@
 use anyhow::Result;
 use filetime::FileTime;
 use ftp::{connect_to_ftp, put_file, read_ftp_file};
-use notify::event::{CreateKind, ModifyKind, RenameMode};
-use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use notify::event::ModifyKind;
+use notify::{RecursiveMode, Watcher};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use std::{fmt, thread};
-
-use crate::utils::*;
-use crate::{errors::*, utils};
 
 mod ftp;
 pub mod modes;
+
+use crate::utils::*;
+use crate::{errors::*, utils};
 use ftp::*;
-pub use modes::{CreateType, SyncMode};
+use modes::{CreateType, SyncMode};
 
 type FtpServers = Option<Vec<HashMap<String, (LocTypes, SystemTime, String)>>>;
 
@@ -65,7 +65,7 @@ impl ReadOnly for LocTypes {
 impl ReadWrite for LocTypes {
     fn write_file(&self, content: &[u8]) -> Result<()> {
         match self {
-            LocTypes::Ftp(user, pass, url, path) => Ok(()),
+            LocTypes::Ftp(_, _, _, _) => Ok(()),
             LocTypes::Folder(_) => Err(FileErrors::InvalidFileForWriting(
                 "A folder can't be written".to_string(),
             )
@@ -110,19 +110,12 @@ fn duplicate_newer_file(
 ) -> Result<()> {
     let (newer_file, older_file) = {
         match file_1.1 .1.cmp(&file_2.1 .1) {
-            Ordering::Greater => {
-                println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-                (file_1, file_2)
-            }
-            Ordering::Less => {
-                println!("Found a match: {} {}", file_1.1 .0, file_2.1 .0);
-                (file_2, file_1)
-            }
+            Ordering::Greater => (file_1, file_2),
+            Ordering::Less => (file_2, file_1),
             Ordering::Equal => return Ok(()), // Same file
         }
     };
     let bytes = newer_file.1 .0.read_file();
-    println!("Reading: {}", newer_file.1 .0);
     let last_modif_time = FileTime::from_system_time(newer_file.1 .1);
     match bytes {
         Some(bytes) => {
@@ -150,7 +143,6 @@ fn duplicate_newer_file_from_zip(
     match bytes {
         Some(bytes) => {
             older_file.1 .0.write_file(&bytes)?;
-            println!("Found a match: {} {}", newer_file.1 .0, older_file.1 .0);
         }
         None => {
             return Err(FileErrors::InvalidFileForReading("Couldn't read file".to_string()).into());
@@ -184,7 +176,6 @@ impl Synchronizer {
         // Now all the locations should be synchronized
         loop {
             // Listen for any changhes and sync
-            println!("Loop");
             thread::spawn(|| match utils::perform_check() {
                 Ok(_) => println!("Performed check!"),
                 Err(e) => println!("Performing check failed: {}", e),
@@ -214,15 +205,8 @@ impl Synchronizer {
                         // If both locations contain a file, the newer version is copied
                         let file_2 = files2.get_key_value(&file_1.0).unwrap();
                         match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
-                            (
-                                LocTypes::SimpleFile(file_path),
-                                LocTypes::Ftp(user, pass, url, ftp_path),
-                            ) => {
+                            (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, ftp_path)) => {
                                 // PUT the file into FTP server
-                                println!(
-                                    "File-FTP : {} {}\n{} - {}",
-                                    file_path, ftp_path, file_1.1 .2, file_2.1 .2
-                                );
                                 match file_1.1 .1.cmp(&file_2.1 .1) {
                                     std::cmp::Ordering::Greater => {
                                         // The SimpleFile is newer and I have to PUT it on the FTP server
@@ -246,10 +230,6 @@ impl Synchronizer {
                                         // same file
                                     }
                                 }
-                            }
-                            (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {
-                                // Extract the file from the FTP server if it's newer and replace it on my machine
-                                println!("Zip-FTP");
                             }
                             (LocTypes::Zip(_), LocTypes::SimpleFile(_)) => {
                                 if file_1.1 .1 > file_2.1 .1 {
@@ -342,7 +322,7 @@ impl Synchronizer {
                                         };
                                     }
                                 },
-                                LocTypes::Ftp(user, pass, url, ftp_path) => match mode {
+                                LocTypes::Ftp(_, _, _, _) => match mode {
                                     SyncMode::Delete => {
                                         file_1.clone().1 .0.delete_file()?;
                                     }
@@ -416,7 +396,6 @@ impl Synchronizer {
                                 if url == url2 {
                                     let files = loc.list_files()?;
                                     if files.len() < sv.clone().len() {
-                                        println!("AM DAT DELETE");
                                         self.initial_sync(SyncMode::Delete)?;
                                     }
                                 }
@@ -447,22 +426,19 @@ impl Synchronizer {
                     }
                     match event.kind {
                         notify::EventKind::Create(_) => {
-                            println!("File created: {:?}", event.paths);
                             self.initial_sync(SyncMode::Create)?;
                         }
                         notify::EventKind::Modify(modif_kind) => match modif_kind {
                             ModifyKind::Name(_) => {
-                                println!("File removed: {:?}", event.paths);
                                 self.initial_sync(SyncMode::Delete)?;
                             }
                             ModifyKind::Data(_) => {
-                                println!("File modified: {:?}", event.paths);
+                                println!("Modified: {:?}", event.paths);
                                 self.initial_sync(SyncMode::Modify)?;
                             }
                             _ => {}
                         },
                         notify::EventKind::Remove(_) => {
-                            println!("File removed: {:?}", event.paths);
                             self.initial_sync(SyncMode::Delete)?;
                         }
                         _ => {}
@@ -475,19 +451,6 @@ impl Synchronizer {
     }
 }
 
-/*
-impl fmt::Display for LocTypes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LocTypes::Ftp(_) => write!(f, "FTP Location:"),
-            LocTypes::Zip(_) => write!(f, "ZIP Archive:"),
-            LocTypes::Folder(_) => write!(f, "Folder Path:"),
-            LocTypes::SimpleFile(_) => write!(f, "File Path:"),
-        }
-    }
-}
-    */
-
 impl fmt::Display for LocTypes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -498,16 +461,3 @@ impl fmt::Display for LocTypes {
         }
     }
 }
-
-/*
-impl fmt::Display for LocTypes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LocTypes::Ftp(details) => write!(f, "FTP Location: {}", details),
-            LocTypes::Zip(path) => write!(f, "ZIP Archive: {}", path),
-            LocTypes::Folder(path) => write!(f, "Folder Path: {}", path),
-            LocTypes::SimpleFile(path) => write!(f, "File Path: {}", path),
-        }
-    }
-}
-*/

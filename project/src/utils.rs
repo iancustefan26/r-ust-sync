@@ -167,7 +167,7 @@ pub fn delete(path: &str) -> Result<()> {
     } else {
         return Err(anyhow::anyhow!("No such file or directory"));
     }
-    println!("Deleted function: {:?}", path);
+    println!("Deleted: {:?}", path);
     Ok(())
 }
 
@@ -234,7 +234,7 @@ fn relative_path(base: &str, target: &str) -> Option<String> {
 
 pub fn perform_check() -> Result<()> {
     loop {
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(15));
         let locations = cli_parsing::retrieve_locations()?;
         let file_name = ".temp_check";
         for loc in locations {

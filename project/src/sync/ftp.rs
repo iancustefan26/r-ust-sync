@@ -1,17 +1,15 @@
 use crate::sync::LocTypes;
-use anyhow::{anyhow, Result};
-use chrono::Duration;
+use anyhow::Result;
 use chrono::{Datelike, NaiveDateTime};
 use ftp::FtpStream;
 use std::collections::HashMap;
-use std::fs;
+
 use std::io::Cursor;
 use std::path::Path;
-use std::path::PathBuf;
-use std::ptr::read;
+
 use std::time::SystemTime;
 
-use super::{CreateType, ReadOnly};
+use super::CreateType;
 
 pub fn connect_to_ftp(
     user: &str,
@@ -19,7 +17,6 @@ pub fn connect_to_ftp(
     url: &str,
     path: &str,
 ) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
-    println!("{} - {} - {} - {}", user, password, url, path);
     let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
 
     ftp_stream.login(user, password)?;
@@ -167,24 +164,16 @@ pub fn put_file(
     url: &str,
     ftp_path: &str,
 ) -> Result<()> {
-    // Connect to the FTP server
-    println!(
-        "user: {}\npass: {}\nurl: {}\nftp_path: {}",
-        user, pass, url, ftp_path
-    );
     let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
 
     // Log in with the provided username and password
     ftp_stream.login(user, pass)?;
     let wdir = ftp_path.rsplit_once("/");
     if let Some(wdir) = wdir {
-        println!("Changhed dir to : {}", wdir.0);
         ftp_stream.cwd(wdir.0)?;
-        println!("Bytes to put: {:?}", file_bytes);
         let mut reader = Cursor::new(file_bytes);
         ftp_stream.put(wdir.1, &mut reader)?;
     } else {
-        println!("Bytes to put: {:?}", file_bytes);
         let mut reader = Cursor::new(file_bytes);
         ftp_stream.put(ftp_path, &mut reader)?;
     }
@@ -192,20 +181,6 @@ pub fn put_file(
     // Logout and close the connection
     ftp_stream.quit()?;
 
-    Ok(())
-}
-
-pub fn replace_newer_ftp_file(
-    file: &(String, (LocTypes, SystemTime, String)),
-    ftp_file: &(&String, &(LocTypes, SystemTime, String)),
-) -> Result<()> {
-    let file_bytes = file.1 .0.read_file().unwrap_or_default();
-    let ftp_file_bytes = ftp_file.1 .0.read_file().unwrap_or_default();
-    for (file_byte, ftp_file_byte) in file_bytes.iter().zip(ftp_file_bytes.iter()) {
-        if file_byte != ftp_file_byte {
-            println!("Byte mismatch: {} != {}", file_byte, ftp_file_byte);
-        }
-    }
     Ok(())
 }
 
