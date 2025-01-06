@@ -4,11 +4,12 @@ use fs::{create_dir_all, metadata, File};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::{fs, time};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{fs, thread, time};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+use crate::cli_parsing;
 pub use crate::sync::modes::CreateType;
 pub use crate::sync::*;
 
@@ -221,5 +222,21 @@ fn relative_path(base: &str, target: &str) -> Option<String> {
             }
         }
         None => None,
+    }
+}
+
+pub fn perform_check() -> Result<()> {
+    loop {
+        thread::sleep(Duration::from_secs(10));
+        let locations = cli_parsing::retrieve_locations()?;
+        let file_name = ".temp_check";
+        for loc in locations {
+            if let LocTypes::Folder(path) = loc.clone() {
+                loc.create_file(file_name, CreateType::File)?;
+                let that_file = LocTypes::SimpleFile(format!("{}/{}", path, file_name));
+                that_file.delete_file()?;
+                break;
+            }
+        }
     }
 }

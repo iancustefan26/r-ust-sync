@@ -1,17 +1,17 @@
 use anyhow::Result;
 use filetime::FileTime;
-use ftp::{connect_to_ftp, read_ftp_file};
+use ftp::{connect_to_ftp, put_file, read_ftp_file};
 use notify::event::{CreateKind, ModifyKind, RenameMode};
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fmt;
 use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
+use std::{fmt, thread};
 
-use crate::errors::*;
 use crate::utils::*;
+use crate::{errors::*, utils};
 
 mod ftp;
 pub mod modes;
@@ -170,25 +170,18 @@ impl Synchronizer {
     }
 
     pub fn sync(&self) -> Result<()> {
-        for loc in &self.locations {
-            let files = loc.list_files()?;
-            for file in files {
-                if let LocTypes::Ftp(_, _, _, _) = loc {
-                    //let bytes = file.1 .0.read_file().unwrap();
-                    println!(
-                        "{} - {} - bytes : {:?}",
-                        file.0,
-                        file.1 .2,
-                        file.1 .0.read_file().unwrap()
-                    );
-                }
-            }
-        }
         self.initial_sync(SyncMode::Any)?;
         // Now all the locations should be synchronized
         loop {
             // Listen for any changhes and sync
             println!("Loop");
+            thread::spawn(|| match utils::perform_check() {
+                Ok(_) => println!("Performed check!"),
+                Err(e) => println!("Performing check failed: {}", e),
+            });
+            // Every 3 seconds if nothing happened perform a check (mostly for FTP stored files)
+            // I will be doing this by creating a thread that creates a hidden file .temp_check and
+            // deletes it very fast in order to trigger the file wathcer so a complete sync check will be done
             match self.continous_sync() {
                 Ok(_) => println!("Quit."),
                 Err(e) => println!("Encountered some error: {}", e),
@@ -216,15 +209,41 @@ impl Synchronizer {
                                 LocTypes::Ftp(user2, pass2, url2, path2),
                             ) => {
                                 // Extract the file from The FTP1 server and PUT it into FTP2 server
+                                println!("FTP-FTP");
                             }
-                            (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, path)) => {
+                            (
+                                LocTypes::SimpleFile(file_path),
+                                LocTypes::Ftp(user, pass, url, ftp_path),
+                            ) => {
                                 // PUT the file into FTP server
+                                println!(
+                                    "File-FTP : {} {}\n{} - {}",
+                                    file_path, ftp_path, file_1.1 .2, file_2.1 .2
+                                );
+                                if file_1.1 .1 > file_2.1 .1 {
+                                    // The SimpleFile is newer and I have to PUT it on the FTP server
+                                    let file_bytes = file_1.1 .0.read_file().unwrap_or_default();
+                                    put_file(&file_bytes, &user, &pass, &url, &ftp_path)?;
+                                } else if file_1.1 .1 < file_2.1 .1 {
+                                    let bytes = file_2.1 .0.read_file().unwrap_or_default();
+                                    file_1.1 .0.write_file(&bytes)?;
+                                    let last_modif_time = FileTime::from_system_time(file_2.1 .1);
+                                    filetime::set_file_times(
+                                        file_1.1 .0.to_string(),
+                                        last_modif_time,
+                                        last_modif_time,
+                                    )?;
+                                }
+
+                                // else it's the same file
                             }
                             (LocTypes::Zip(_), LocTypes::Ftp(user, pass, url, path)) => {
                                 // Extract the ZIP file and PUT it onto the FTP server if it's newer
+                                println!("Zip-FTP");
                             }
                             (LocTypes::Ftp(user, pass, url, path), LocTypes::SimpleFile(_)) => {
                                 // Extract the file from the FTP server if it's newer and replace it on my machine
+                                println!("FTP-File");
                             }
                             (LocTypes::Zip(_), LocTypes::SimpleFile(_)) => {
                                 if file_1.1 .1 > file_2.1 .1 {
@@ -242,7 +261,9 @@ impl Synchronizer {
                     } else {
                         // If only a location contains the file, the file is duplicated to the other location
                         match loc2 {
-                            LocTypes::Ftp(user, pass, url, path) => {}
+                            LocTypes::Ftp(user, pass, url, path) => {
+                                println!("FTP!!!!: {}", file_1.0);
+                            }
                             LocTypes::Folder(_) => match file_1.1 .0 {
                                 LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
                                     SyncMode::Delete => {
@@ -306,7 +327,6 @@ impl Synchronizer {
                 watchers.push(watcher);
             }
         }
-
         'result_loop: for res in rx {
             match res {
                 Ok(event) => {
