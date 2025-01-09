@@ -66,12 +66,6 @@ pub fn list_files_in_zip(
             None => (UNIX_EPOCH, "Unknown".to_string()),
         };
         let rel_path = relative_path(zip_path, &file_path).unwrap();
-        /*
-        println!(
-            "Absolute Path : {}\nRelative Path : {}\nLast modified time : {:?} -- {}",
-            file_path, rel_path, system_time, human_readable_time
-        );
-        */
         files.insert(
             rel_path,
             (LocTypes::Zip(file_path), system_time, human_readable_time),
@@ -140,10 +134,14 @@ pub fn file_as_bytes(file_path: &str) -> Option<Vec<u8>> {
         return Some(buffer);
     }
 
-    let mut file = File::open(file_path).ok()?;
+    let file = File::open(file_path).ok()?;
+    let upper_bound_size = 1024 * 1024 * 1024 * 200; // 200MB stack max
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).ok()?;
-    Some(buffer)
+    let mut handle = file.take(upper_bound_size);
+    match handle.read_to_end(&mut buffer) {
+        Ok(_) => Some(buffer),
+        Err(_) => None,
+    }
 }
 
 pub fn paste_to_file(path: &str, content: &[u8]) -> Result<()> {
@@ -230,7 +228,7 @@ fn relative_path(base: &str, target: &str) -> Option<String> {
 // in order to trigger the file system watcher every X seconds
 pub fn perform_check() -> Result<()> {
     loop {
-        let seconds = 15;
+        let seconds = 20;
         thread::sleep(Duration::from_secs(seconds));
         let locations = cli_parsing::retrieve_locations()?;
         let file_name = ".temp_check";

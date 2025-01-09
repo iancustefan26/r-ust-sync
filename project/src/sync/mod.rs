@@ -18,6 +18,9 @@ use crate::{errors::*, utils};
 use ftp::*;
 use modes::{CreateType, SyncMode};
 
+// Option <Vec<Ftp_servers<K, V>>>
+// K = rel_path_to_file
+// V = (File, timestamp, human_readable_timestamp)
 type FtpServers = Option<Vec<HashMap<String, (LocTypes, SystemTime, String)>>>;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
