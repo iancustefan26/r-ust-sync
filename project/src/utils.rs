@@ -14,6 +14,7 @@ use crate::errors::FileErrors;
 pub use crate::sync::modes::CreateType;
 pub use crate::sync::*;
 
+// Function that uses zip crate to list the files from a zip archive
 pub fn list_files_in_zip(
     zip_path: &str,
 ) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
@@ -80,6 +81,7 @@ pub fn list_files_in_zip(
     Ok(files)
 }
 
+// Function that list files from a dir and stores them in a HashMap that is convenient for searching in O(1)
 // Result <Hashmap<relative_path, (absolute_path, unix_epoch modif time, human read. modif time)
 pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, SystemTime, String)>> {
     let mut files = HashMap::new();
@@ -91,15 +93,6 @@ pub fn list_files_recursive(dir: &str) -> Result<HashMap<String, (LocTypes, Syst
         }
         let last_modified_tuple = get_last_modified_time(&entry_path)?;
         let rel_path = relative_path(dir, &entry_path).unwrap();
-        /*
-        println!(
-            "Absoulte Path : {}\nRelative Path: {}\nLast modified time : {:?} -- {}",
-            entry.path().display(),
-            rel_path,
-            last_modified_tuple.0,
-            last_modified_tuple.1
-        );
-        */
         if entry.path().is_dir() {
             files.insert(
                 rel_path,
@@ -171,6 +164,7 @@ pub fn delete(path: &str) -> Result<()> {
     Ok(())
 }
 
+// Function that creates a file and all of it's parents if necessary
 pub fn create(path: &str, create_type: CreateType) -> Result<()> {
     match create_type {
         CreateType::Folder => {
@@ -232,9 +226,12 @@ fn relative_path(base: &str, target: &str) -> Option<String> {
     }
 }
 
+// Function that triggers a simple create and delete system file
+// in order to trigger the file system watcher every X seconds
 pub fn perform_check() -> Result<()> {
     loop {
-        thread::sleep(Duration::from_secs(15));
+        let seconds = 15;
+        thread::sleep(Duration::from_secs(seconds));
         let locations = cli_parsing::retrieve_locations()?;
         let file_name = ".temp_check";
         for loc in locations {

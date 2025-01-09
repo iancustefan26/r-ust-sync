@@ -3,14 +3,14 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDateTime};
 use ftp::FtpStream;
 use std::collections::HashMap;
-
 use std::io::Cursor;
 use std::path::Path;
-
 use std::time::SystemTime;
 
 use super::CreateType;
 
+// Function that connects to the FTP server and performs a GET for all the files in the given location
+// and stores them exactly as the system files
 pub fn connect_to_ftp(
     user: &str,
     password: &str,
@@ -38,6 +38,7 @@ pub fn connect_to_ftp(
     Ok(files)
 }
 
+// Helping the above function
 fn recursive_list(
     user: &str,
     pass: &str,
@@ -104,6 +105,7 @@ fn recursive_list(
     Ok(())
 }
 
+// Extracting name and last modif date for a given FTP file
 fn extract_ftp_file_data(entry: String) -> (String, SystemTime, String) {
     let columns: Vec<&str> = entry.split_whitespace().collect();
 
@@ -137,6 +139,7 @@ fn extract_ftp_file_data(entry: String) -> (String, SystemTime, String) {
     (file_name, system_time, human_readable)
 }
 
+// Read the bytes of a FTP file
 pub fn read_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Option<Vec<u8>> {
     let mut ftp_stream = FtpStream::connect(format!("{}:21", url)).ok()?;
 
@@ -157,6 +160,7 @@ pub fn read_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Option<Ve
     }
 }
 
+// Performs a PUT
 pub fn put_file(
     file_bytes: &[u8],
     user: &str,
@@ -166,7 +170,6 @@ pub fn put_file(
 ) -> Result<()> {
     let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
 
-    // Log in with the provided username and password
     ftp_stream.login(user, pass)?;
     let wdir = ftp_path.rsplit_once("/");
     if let Some(wdir) = wdir {
@@ -177,13 +180,12 @@ pub fn put_file(
         let mut reader = Cursor::new(file_bytes);
         ftp_stream.put(ftp_path, &mut reader)?;
     }
-
-    // Logout and close the connection
     ftp_stream.quit()?;
 
     Ok(())
 }
 
+// Creating an FTP file directly on the FTP server using it's specific commands
 pub fn create_ftp_file(
     user: &str,
     pass: &str,
@@ -226,8 +228,8 @@ pub fn create_ftp_file(
     Ok(())
 }
 
+// Deleteing a file and all of it's subdirs recursively
 pub fn delete_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Result<()> {
-    // Connect to the FTP server
     let mut ftp_stream = FtpStream::connect(format!("{}:21", url))?;
     ftp_stream.login(user, pass)?;
 
@@ -237,23 +239,18 @@ pub fn delete_ftp_file(user: &str, pass: &str, url: &str, path: &str) -> Result<
     Ok(())
 }
 
+// help for the above function
 fn recursive_delete(ftp_stream: &mut FtpStream, path: &str) -> Result<()> {
-    // Check if the path is a directory
     if ftp_stream.cwd(path).is_ok() {
-        // If it's a directory, list its contents
         let items = ftp_stream.nlst(None)?;
         for item in items {
             let item_path = format!("{}/{}", path, item);
-            // Recursively delete the item
             recursive_delete(ftp_stream, &item_path)?;
         }
-        // Change back to parent directory before deleting
         ftp_stream.cdup()?;
-        // Delete the directory itself
         let dir = path.rsplit_once("/").unwrap_or(("", path));
         ftp_stream.rmdir(dir.1)?;
     } else {
-        // If it's a file, delete it
         ftp_stream.rm(path)?;
     }
     Ok(())

@@ -5,10 +5,11 @@ use thiserror::Error;
 pub enum ArgErrors {
     #[error("Invalid location format: {0}")]
     InvalidLocation(String),
-    #[error("Config file empty, use --help to give --set arg some location paths")]
+    #[error("Config file empty, use --help to give --set arg some location paths, or modify ~/.adv_rsync/cfg/locations.cfg")]
     EmptyCfg,
 }
 
+// Errors for file operations
 #[derive(Debug, Error)]
 pub enum FileErrors {
     #[error("Invalid file for listing: {0}")]

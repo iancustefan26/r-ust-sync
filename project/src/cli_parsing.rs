@@ -6,15 +6,32 @@ use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::path::PathBuf;
 
 use crate::{errors::*, sync::*};
 
-const CFG_FILE: &str = "cfg/locations.cfg";
+// Function that retrieves the config file (and creates it if it does not exist)
+fn config_file() -> Result<String> {
+    let home_dir = dirs_next::home_dir().expect("Failed to find home directory; could not retrieve locations; Try creating /home/user/.adv_rsync/cfg/locations.cfg");
+
+    let cfg_path: PathBuf = home_dir.join(".adv_rsync/cfg/locations.cfg");
+    if cfg_path.exists() {
+        return Ok(cfg_path.to_str().unwrap_or("").to_string());
+    }
+    if let Some(parent) = cfg_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::File::create(&cfg_path)?;
+
+    Ok(cfg_path.to_str().unwrap_or("").to_string())
+}
 
 // Appending the given arguments to the config file
 fn append_to_cfg(locations: &Vec<String>) -> Result<()> {
+    let cfg_file = config_file()?;
     let mut existing_locations = HashSet::new();
-    let file = fs::File::open(CFG_FILE)?;
+    let file = fs::File::open(&cfg_file)?;
     let reader = BufReader::new(file);
     for line in reader.lines() {
         existing_locations.insert(line?);
@@ -23,11 +40,11 @@ fn append_to_cfg(locations: &Vec<String>) -> Result<()> {
     let mut cfg_file = OpenOptions::new()
         .append(true)
         .create(true)
-        .open(CFG_FILE)?;
+        .open(cfg_file)?;
 
     for location in locations {
         if !existing_locations.contains(location) {
-            writeln!(cfg_file, "{}", location)?;
+            writeln!(cfg_file, "\n{}", location)?;
         }
     }
     Ok(())
@@ -74,10 +91,11 @@ pub fn parse_args() -> Result<Option<Vec<String>>> {
 
 // Reading from the CFG file for running
 pub fn retrieve_locations() -> Result<Vec<LocTypes>> {
-    if !Path::new(CFG_FILE).exists() {
-        File::create(CFG_FILE)?;
+    let cfg_file = config_file()?;
+    if !Path::new(&cfg_file).exists() {
+        File::create(&cfg_file)?;
     }
-    let content = fs::read_to_string(CFG_FILE)?;
+    let content = fs::read_to_string(cfg_file)?;
     if content.is_empty() {
         return Err(ArgErrors::EmptyCfg.into());
     }
@@ -86,10 +104,12 @@ pub fn retrieve_locations() -> Result<Vec<LocTypes>> {
 
     for (index, line) in content.lines().enumerate() {
         if !location_regex.is_match(line) {
-            println!(
+            if line != "\n" {
+                println!(
                 "Line {}: Could not parse location and will not be taken into consideration : {}",
                 index, line
             );
+            }
         } else {
             let type_path = line.split_once(":").unwrap();
             match type_path.0 {

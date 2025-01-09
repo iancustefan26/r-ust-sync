@@ -25,18 +25,20 @@ pub enum LocTypes {
     Ftp(String, String, String, String), // ftp:user:password@URL/path
     Zip(String),                         // zip:/path/to/archive.zip
     Folder(String),                      // folder:/path/to/folder
-    SimpleFile(String),
+    SimpleFile(String),                  // /path/to/folder/file.ext
 }
 
+// ReadOnly trait for the ZIP archives
 pub trait ReadOnly {
     fn list_files(&self) -> Result<HashMap<String, (LocTypes, SystemTime, String)>>; // Returns file paths with last modified times
     fn read_file(&self) -> Option<Vec<u8>>; // Read files as bytes
 }
 
+// ReadWrite trait that extends ReadOnly for Folder and FTP locations because I can modify them
 pub trait ReadWrite: ReadOnly {
-    fn write_file(&self, content: &[u8]) -> Result<()>;
-    fn delete_file(&self) -> Result<()>;
-    fn create_file(&self, path: &str, create_type: CreateType) -> Result<()>;
+    fn write_file(&self, content: &[u8]) -> Result<()>; // Write bytes into file
+    fn delete_file(&self) -> Result<()>; // Delete the file
+    fn create_file(&self, path: &str, create_type: CreateType) -> Result<()>; // Create a file in path of type create_type
 }
 
 impl ReadOnly for LocTypes {
@@ -104,6 +106,8 @@ impl ReadWrite for LocTypes {
     }
 }
 
+// Function that duplicates the newer file to the locations that has the older file
+// in case a file with the same name and path is found
 fn duplicate_newer_file(
     file_1: (String, (LocTypes, SystemTime, String)),
     file_2: (String, (LocTypes, SystemTime, String)),
@@ -134,6 +138,7 @@ fn duplicate_newer_file(
     Ok(())
 }
 
+// Same thing as the above function but extracts the file from the zip only if the zip is newer
 fn duplicate_newer_file_from_zip(
     newer_file: (String, (LocTypes, SystemTime, String)),
     older_file: (String, (LocTypes, SystemTime, String)),
@@ -157,13 +162,14 @@ fn duplicate_newer_file_from_zip(
     Ok(())
 }
 
-// Sync logic
+// Sync logic struct
 pub struct Synchronizer {
     locations: Vec<LocTypes>,
     prev_ftp_files: FtpServers,
 }
 
 impl Synchronizer {
+    // Retrieve new instance
     pub fn new(locations: Vec<LocTypes>, option: FtpServers) -> Self {
         Self {
             locations,
@@ -171,16 +177,16 @@ impl Synchronizer {
         }
     }
 
+    // main function
     pub fn sync(&mut self) -> Result<()> {
         self.initial_sync(SyncMode::Any)?;
         // Now all the locations should be synchronized
         loop {
-            // Listen for any changhes and sync
             thread::spawn(|| match utils::perform_check() {
                 Ok(_) => println!("Performed check!"),
                 Err(e) => println!("Performing check failed: {}", e),
             });
-            // Every 3 seconds if nothing happened perform a check (mostly for FTP stored files)
+            // Every X seconds if nothing happened perform a check (mostly for FTP stored files)
             // I will be doing this by creating a thread that creates a hidden file .temp_check and
             // deletes it very fast in order to trigger the file watcher so a complete sync check will be done
             match self.continous_sync() {
@@ -204,6 +210,7 @@ impl Synchronizer {
                         // O(1) (hashmap)
                         // If both locations contain a file, the newer version is copied
                         let file_2 = files2.get_key_value(&file_1.0).unwrap();
+                        // This match has to do with edge-cases of different locations and syncing the newer file found
                         match (file_1.1 .0.clone(), file_2.1 .0.clone()) {
                             (LocTypes::SimpleFile(_), LocTypes::Ftp(user, pass, url, ftp_path)) => {
                                 // PUT the file into FTP server
@@ -246,6 +253,8 @@ impl Synchronizer {
                         }
                     } else {
                         // If only a location contains the file, the file is duplicated to the other location
+                        // Also, the below matcher are dealing with different edge-cases where different locations are encountered
+                        // in different sync manner(delete, modify, create)
                         match loc2 {
                             LocTypes::Ftp(user, pass, url, ftp_path) => match file_1.1 .0 {
                                 LocTypes::Zip(_) | LocTypes::SimpleFile(_) => match mode {
@@ -377,6 +386,9 @@ impl Synchronizer {
         Ok(())
     }
 
+    // After initialization, this function performs a check to see if all the locations are synced
+    // by creating a watcher for system files, and a X seconds GET for FTP servers
+    // and sync the locations found by calling the above function in the corespondent mode
     fn continous_sync(&mut self) -> Result<()> {
         let (tx, rx) = mpsc::channel::<Result<notify::Event, notify::Error>>(); // Correct type
         let mut watchers = Vec::new();
