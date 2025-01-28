@@ -17,6 +17,16 @@ r(ust)sync is a synchronization tool written in Rust that ensures real-time data
     - **Modify**: Updates to files are propagated across locations.
 - **Read-Only Support for ZIP**: ZIP archives are treated as read-only sources for synchronization.
 
+## Example
+**Before:**
+![ftp-before](examples/ftp_before.png)
+![folders-before](examples/folders_before.png)
+**After:**
+![ftp-after](examples/ftp_after.png)
+![folders-after](examples/folders_after.png)
+**Config file:**
+![cfg](examples/config.png)
+
 ## Supported Location Formats
 A location is specified in the following format:
 ```plaintext
