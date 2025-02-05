@@ -1,7 +1,0 @@
-/Users/stefaniancu/Documents/VS Code/Rust/lab06/target/debug/deps/libvcpkg-1aa5f3fd9591d886.rmeta: /Users/stefaniancu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/vcpkg-0.2.15/src/lib.rs
-
-/Users/stefaniancu/Documents/VS Code/Rust/lab06/target/debug/deps/libvcpkg-1aa5f3fd9591d886.rlib: /Users/stefaniancu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/vcpkg-0.2.15/src/lib.rs
-
-/Users/stefaniancu/Documents/VS Code/Rust/lab06/target/debug/deps/vcpkg-1aa5f3fd9591d886.d: /Users/stefaniancu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/vcpkg-0.2.15/src/lib.rs
-
-/Users/stefaniancu/.cargo/registry/src/index.crates.io-6f17d22bba15001f/vcpkg-0.2.15/src/lib.rs:
